@@ -8,10 +8,11 @@ dockerfilePath = "Dockerfile"
 # preDeployCommand runs BEFORE the healthcheck window opens.
 # Alembic can take 10-30s on first deploy; keeping it out of startCommand
 # stops the healthcheck from timing out.
-preDeployCommand = "alembic upgrade head"
+preDeployCommand = "sh -c 'alembic upgrade head'"
 
-# Now startCommand is pure uvicorn — starts in <2s.
-startCommand = "uvicorn sahay.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*"
+# Railway runs startCommand WITHOUT a shell — so $PORT is literal unless
+# we wrap it in sh -c. Do NOT remove the sh -c wrapper.
+startCommand = "sh -c 'uvicorn sahay.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*'"
 
 healthcheckPath = "/health"
 healthcheckTimeout = 300
