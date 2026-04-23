@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sahay</string>
+
+    <string name="accessibility_service_label">Sahay — Voice Assistant</string>
+    <string name="accessibility_service_summary">Lets Sahay tap, type, and read screens on your behalf for the apps you allow.</string>
+    <string name="accessibility_service_description">Sahay uses the Accessibility Service to perform actions you ask for in apps you have explicitly allowed (in Sahay → Settings → Apps). Sahay will never perform actions in payment, banking, or money-transfer apps. All destructive actions (sending, deleting, posting) require your tap-to-confirm. Screen content is processed on-device — only abstract action metadata is sent to the Sahay server.</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Welcome to Sahay</string>
+    <string name="onboarding_subtitle">Your AI hands. Voice-driven. Privacy-first.</string>
+    <string name="onboarding_email_hint">Email address</string>
+    <string name="onboarding_send_otp">Send code</string>
+    <string name="onboarding_otp_hint">6-digit code</string>
+    <string name="onboarding_verify">Verify</string>
+    <string name="onboarding_resend">Resend code</string>
+    <string name="onboarding_privacy_promise">We never store your messages, contacts, or screen content.</string>
+
+    <!-- Home -->
+    <string name="home_tap_to_speak">Hold to speak</string>
+    <string name="home_listening">Listening…</string>
+    <string name="home_thinking">Thinking…</string>
+    <string name="home_ready">Ready</string>
+
+    <!-- Permissions -->
+    <string name="perm_accessibility_title">Allow Accessibility</string>
+    <string name="perm_accessibility_body">Sahay needs Accessibility Service to tap and type in apps you allow. Only your allowlisted apps are touched. Payment apps are always blocked.</string>
+    <string name="perm_mic_title">Allow Microphone</string>
+    <string name="perm_mic_body">Voice commands need mic access. Audio is converted to text and discarded.</string>
+    <string name="perm_notifications_title">Allow Notifications</string>
+    <string name="perm_notifications_body">Sahay shows a quiet notification when running so you always know.</string>
+    <string name="perm_open_settings">Open Settings</string>
+
+    <!-- Confirmation modal -->
+    <string name="confirm_send">Confirm action</string>
+    <string name="confirm_cancel">Cancel</string>
+    <string name="confirm_proceed">Proceed</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_apps">Apps Sahay can use</string>
+    <string name="settings_voice">Voice</string>
+    <string name="settings_billing">Billing</string>
+    <string name="settings_privacy">Privacy</string>
+    <string name="settings_kill_switch_hint">Kill switch: press volume-down 3 times in 2 seconds.</string>
+    <string name="settings_payment_blocked">Payment apps are permanently blocked for safety.</string>
+    <string name="settings_delete_data">Delete my account &amp; data</string>
+
+    <!-- Tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_logs">Logs</string>
+    <string name="tab_files">Files</string>
+    <string name="tab_settings">Settings</string>
+</resources>

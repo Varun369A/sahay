@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.keystore
+*.jks
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/app/release/
+android/app/debug/
+*.iml
+
+# Node (for any tooling)
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# Build artifacts
+dist/
+build/
+*.apk
+*.aab
+
+# Logs
+*.log
+logs/
+
+# Local DBs
+*.sqlite3
+*.db

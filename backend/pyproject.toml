@@ -1,0 +1,106 @@
+[project]
+name = "sahay-backend"
+version = "0.1.0"
+description = "Sahay backend — voice-driven personal assistant for Android"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Varun", email = "varunkrissss@gmail.com" }]
+readme = "../README.md"
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12",          # multipart uploads
+
+    # Validation + config
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "email-validator>=2.2.0",
+
+    # Database
+    "sqlalchemy>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "psycopg2-binary>=2.9.10",           # alembic offline / sync ops
+
+    # Auth + crypto
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.2.0",
+    "passlib[bcrypt]>=1.7.4",
+
+    # External services
+    "anthropic>=0.39.0",
+    "resend>=2.4.0",
+    "razorpay>=1.4.2",
+    "boto3>=1.35.0",                     # Cloudflare R2 (S3-compatible)
+    "replicate>=1.0.4",                  # image generation
+    "redis[hiredis]>=5.2.0",             # Upstash Redis
+
+    # HTTP + retries
+    "httpx>=0.28.0",
+    "tenacity>=9.0.0",
+
+    # Observability
+    "sentry-sdk[fastapi]>=2.18.0",
+    "structlog>=24.4.0",
+
+    # Misc
+    "python-dotenv>=1.0.1",
+    "orjson>=3.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "types-passlib>=1.7.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sahay"]
+
+# ─── Tooling config ──────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "N",             # pep8-naming
+    "ASYNC",         # async best practices
+    "S",             # bandit (security)
+    "RUF",           # ruff-specific
+]
+ignore = [
+    "S101",          # asserts in tests are fine
+    "S608",          # SQL string formation — we use SQLAlchemy
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+"alembic/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/", "tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short --strict-markers"

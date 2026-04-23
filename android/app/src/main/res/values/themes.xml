@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash + base theme. Compose owns runtime theming via Theme.kt. -->
+    <style name="Theme.Sahay.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FAF6E9</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Sahay</item>
+    </style>
+
+    <style name="Theme.Sahay" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FAF6E9</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#FAF6E9</item>
+    </style>
+</resources>
