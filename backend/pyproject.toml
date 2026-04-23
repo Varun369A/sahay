@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Sahay backend — voice-driven personal assistant for Android"
 requires-python = ">=3.12,<3.13"
 authors = [{ name = "Varun", email = "varunkrissss@gmail.com" }]
-readme = "../README.md"
 
 dependencies = [
     # Web framework

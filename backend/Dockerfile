@@ -21,7 +21,6 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN pip install --upgrade pip wheel \
-    && pip wheel --no-deps --wheel-dir /wheels . \
     && pip wheel --wheel-dir /wheels .
 
 # ─── Runtime ────────────────────────────────────────────────────────
