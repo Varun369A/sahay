@@ -64,10 +64,10 @@ class Settings(BaseSettings):
     replicate_api_token: SecretStr
     replicate_image_model: str = "black-forest-labs/flux-schnell"
 
-    # ─── Razorpay ────────────────────────────────────────────────────
-    razorpay_key_id: str
-    razorpay_key_secret: SecretStr
-    razorpay_webhook_secret: SecretStr
+    # ─── Razorpay (OPTIONAL — billing deferred) ──────────────────────
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: SecretStr | None = None
+    razorpay_webhook_secret: SecretStr | None = None
 
     # ─── Sarvam ──────────────────────────────────────────────────────
     sarvam_api_key: SecretStr | None = None  # primarily used by Android client
