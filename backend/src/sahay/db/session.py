@@ -19,6 +19,12 @@ from sahay.config import get_settings
 
 _settings = get_settings()
 
+# asyncpg needs SSL passed via connect_args, NOT as a URL query param.
+# config.py strips ssl/sslmode/channel_binding from the URL; we add it back here.
+_connect_args: dict[str, object] = {}
+if _settings.db_needs_ssl:
+    _connect_args["ssl"] = True
+
 # Engine pool tuning:
 #   - pool_size 10 + max_overflow 20 → up to 30 concurrent DB conns per process
 #   - pool_pre_ping detects dead conns (Neon scales-to-zero)
@@ -31,6 +37,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
     future=True,
+    connect_args=_connect_args,
 )
 
 SessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(

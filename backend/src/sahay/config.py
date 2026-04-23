@@ -89,18 +89,37 @@ class Settings(BaseSettings):
     # ─── Computed / validators ───────────────────────────────────────
     @field_validator("database_url")
     @classmethod
-    def _enforce_async_driver(cls, v: str) -> str:
-        if not v.startswith("postgresql+asyncpg://"):
-            # Allow plain postgres:// but auto-convert.
-            if v.startswith("postgres://"):
-                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif v.startswith("postgresql://"):
-                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
-            else:
-                raise ValueError(
-                    "DATABASE_URL must use postgresql+asyncpg:// scheme"
-                )
+    def _normalize_db_url(cls, v: str) -> str:
+        """Enforce asyncpg scheme and strip SSL query params.
+
+        asyncpg doesn't accept `sslmode`/`ssl=require` as a query string —
+        SSL is handled via `connect_args` in db/session.py instead. We strip
+        these params here so Neon URLs (which include them) work unchanged.
+        """
+        # Scheme normalisation
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif not v.startswith("postgresql+asyncpg://"):
+            raise ValueError("DATABASE_URL must use postgresql:// or postgresql+asyncpg:// scheme")
+
+        # Strip SSL-related query params — handled in session.py via connect_args.
+        if "?" in v:
+            base, qs = v.split("?", 1)
+            pairs = [
+                p for p in qs.split("&")
+                if not p.lower().startswith(("sslmode=", "ssl=", "channel_binding="))
+            ]
+            v = f"{base}?{'&'.join(pairs)}" if pairs else base
         return v
+
+    @property
+    def db_needs_ssl(self) -> bool:
+        """Infer whether the DB needs TLS (Neon, Supabase, RDS all do)."""
+        url = self.database_url.lower()
+        return any(h in url for h in ("neon.tech", "supabase", "amazonaws.com", "render.com")) \
+            or "localhost" not in url and "127.0.0.1" not in url
 
     @property
     def cors_origins_list(self) -> list[str]:

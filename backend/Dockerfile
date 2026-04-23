@@ -53,5 +53,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:${PORT}/health || exit 1
 
-# Run migrations then start server.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn sahay.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
+# Migrations are run by Railway's preDeployCommand (see railway.toml) —
+# outside the healthcheck window. The image itself just runs uvicorn.
+CMD ["sh", "-c", "uvicorn sahay.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]

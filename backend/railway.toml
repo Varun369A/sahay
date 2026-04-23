@@ -1,14 +1,20 @@
 # Railway deployment config.
-# Service is auto-detected as Dockerfile-based.
 
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "alembic upgrade head && uvicorn sahay.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*"
+# preDeployCommand runs BEFORE the healthcheck window opens.
+# Alembic can take 10-30s on first deploy; keeping it out of startCommand
+# stops the healthcheck from timing out.
+preDeployCommand = "alembic upgrade head"
+
+# Now startCommand is pure uvicorn — starts in <2s.
+startCommand = "uvicorn sahay.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*"
+
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
