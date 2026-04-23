@@ -45,6 +45,7 @@ RUN pip install --no-index --find-links /wheels sahay-backend \
 
 COPY --chown=sahay:sahay alembic.ini ./
 COPY --chown=sahay:sahay alembic ./alembic
+COPY --chown=sahay:sahay scripts ./scripts
 
 USER sahay
 
