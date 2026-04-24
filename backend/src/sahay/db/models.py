@@ -315,6 +315,53 @@ class Subscription(Base):
     )
 
 
+class UserMemory(Base):
+    """Long-term per-user facts the agent has learnt and can recall.
+
+    Lifecycle:
+      • Agent writes with tool=`remember(key, value, category, importance)`.
+      • Every agent turn's system prompt gets the top-K most-relevant
+        memories pre-loaded (relevance = importance * recency decay).
+      • Agent can `forget(key)` when a fact is obsolete.
+      • Nightly compressor (Opus batch) dedupes + consolidates.
+
+    Keys are slugified ("bosses-name", "preferred-voice-locale", …) so
+    the model can reference them stably across sessions.
+    """
+
+    __tablename__ = "user_memory"
+
+    id: Mapped[UUID] = mapped_column(**uuid_pk)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    # Free-form category: "people" | "preferences" | "schedule" | "facts" | "habits"
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="facts")
+    # 1..10; higher = injected first when trimming to token budget.
+    importance: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    # Soft signal — updated on read so stale memories fade from top-K.
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    # Source of truth: who set this — "agent" | "user" | "system".
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="agent")
+
+    created_at: Mapped[datetime] = mapped_column(**created_at)
+    updated_at: Mapped[datetime] = mapped_column(**updated_at)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "key", name="uq_user_memory_user_key"),
+        Index("ix_user_memory_user_importance", "user_id", "importance"),
+        Index("ix_user_memory_user_last_accessed", "user_id", "last_accessed_at"),
+        CheckConstraint(
+            "importance BETWEEN 1 AND 10",
+            name="ck_user_memory_importance_range",
+        ),
+    )
+
+
 # Convenience: all model classes (used by alembic env.py for autogenerate).
 ALL_MODELS = (
     User,
@@ -326,4 +373,5 @@ ALL_MODELS = (
     UsagePeriod,
     File,
     Subscription,
+    UserMemory,
 )

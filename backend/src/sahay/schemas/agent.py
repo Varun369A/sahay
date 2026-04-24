@@ -51,6 +51,7 @@ class AgentTool(BaseModel):
     tool: Literal[
         "tap_node",         # ★ preferred — tap indexed node from current tree
         "type_in_node",     # ★ preferred — type into indexed editable node
+        "long_press_node",  # long-press indexed node (voice msgs, context menus)
         "tap",              # tap at (x, y) coords — use when target only visible in screenshot
         "long_press",
         "type",             # type text into currently focused field
@@ -63,6 +64,8 @@ class AgentTool(BaseModel):
         "ask_user",         # pause task, ask user a question
         "done",             # task complete
         "give_up",          # cannot continue
+        "remember",         # persist a fact about the user (long-term memory)
+        "forget",           # delete a fact from long-term memory
     ]
     # tap_node / type_in_node — the `i` from the tree nodes list
     node_index: int | None = Field(default=None, ge=0, le=500)
@@ -82,6 +85,11 @@ class AgentTool(BaseModel):
     app_package: str | None = Field(default=None, max_length=255)
     # speak / ask_user / done / give_up
     message: str | None = Field(default=None, max_length=2000)
+    # remember / forget
+    key: str | None = Field(default=None, max_length=128)
+    value: str | None = Field(default=None, max_length=2000)
+    category: str | None = Field(default=None, max_length=32)
+    importance: int | None = Field(default=None, ge=1, le=10)
     # Metadata
     reasoning: str | None = Field(default=None, max_length=500,
                                    description="Claude's 1-line rationale")
