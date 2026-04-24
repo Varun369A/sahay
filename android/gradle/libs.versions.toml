@@ -20,6 +20,7 @@ datastore = "1.1.1"
 security-crypto = "1.1.0-alpha06"
 work = "2.9.1"
 splashscreen = "1.0.1"
+vosk = "0.3.47"
 junit = "4.13.2"
 androidx-junit = "1.2.1"
 espresso = "3.6.1"
@@ -69,6 +70,9 @@ work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref
 
 # UX
 splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
+
+# Voice — offline wake word + STT (no API key)
+vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
 
 # Test
 junit = { group = "junit", name = "junit", version.ref = "junit" }

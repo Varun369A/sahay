@@ -136,8 +136,9 @@ dependencies {
     // UX
     implementation(libs.splashscreen)
 
-    // Voice — wake word handled by Android's built-in SpeechRecognizer
-    // (zero extra deps, free, on-device on most modern Androids)
+    // Voice — wake word + offline STT via Vosk
+    // (no API key, no Google services, silent — model downloaded on first launch)
+    implementation(libs.vosk.android)
 
     // Debug
     debugImplementation(libs.compose.ui.tooling)

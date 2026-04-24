@@ -28,11 +28,14 @@ from sahay.db.session import session_scope
 
 PLAYBOOKS: list[dict[str, Any]] = [
     # ─── WhatsApp ─────────────────────────────────────────────────────
+    # Conditional flow: if already inside a chat, navigate back to chats list
+    # before searching the recipient. Step 0 = launch (no-op if already running).
+    # Vision resolver handles UI variants we didn't anticipate.
     {
         "app_package": "com.whatsapp",
         "app_name": "WhatsApp",
         "intent": "send_message",
-        "reliability_score": 0.85,
+        "reliability_score": 0.80,
         "source_doc_url": "https://faq.whatsapp.com/",
         "steps_json": {
             "app_package": "com.whatsapp",
@@ -41,49 +44,71 @@ PLAYBOOKS: list[dict[str, Any]] = [
             "inputs": ["recipient_name", "message_text"],
             "steps": [
                 {
-                    "step": 1, "description": "Launch WhatsApp",
+                    "step": 1, "description": "Launch or focus WhatsApp",
                     "target_screen": "any", "action": "launch",
                     "target_selector": {"package": "com.whatsapp"},
-                    "params": {}, "confirm_required": False, "timeout_ms": 5000,
+                    "params": {}, "confirm_required": False, "timeout_ms": 6000,
                     "on_failure": "abort",
                 },
                 {
-                    "step": 2, "description": "Tap search icon",
+                    "step": 2, "description": "Wait for WhatsApp UI to settle",
+                    "target_screen": "any", "action": "wait",
+                    "target_selector": {}, "params": {},
+                    "confirm_required": False, "timeout_ms": 1500, "on_failure": None,
+                },
+                {
+                    "step": 3, "description": "Navigate back to chats list (if inside an existing chat)",
+                    "target_screen": "any", "action": "back",
+                    "target_selector": {}, "params": {},
+                    "confirm_required": False, "timeout_ms": 800, "on_failure": None,
+                },
+                {
+                    "step": 4, "description": "Tap search icon to find the contact",
                     "target_screen": "chats_list", "action": "tap",
                     "target_selector": {"contentDescription": "Search"},
-                    "params": {}, "confirm_required": False, "timeout_ms": 3000,
+                    "params": {}, "confirm_required": False, "timeout_ms": 4000,
                     "on_failure": "retry_once",
                 },
                 {
-                    "step": 3, "description": "Type recipient name",
+                    "step": 5, "description": "Type the contact's name in search",
                     "target_screen": "search", "action": "type",
                     "target_selector": {"viewId": "com.whatsapp:id/search_src_text"},
                     "params": {"text": "{{recipient_name}}"},
                     "confirm_required": False, "timeout_ms": 3000, "on_failure": None,
                 },
                 {
-                    "step": 4, "description": "Tap matching contact",
+                    "step": 6, "description": "Wait for results",
+                    "target_screen": "search_results", "action": "wait",
+                    "target_selector": {}, "params": {},
+                    "confirm_required": False, "timeout_ms": 1200, "on_failure": None,
+                },
+                {
+                    "step": 7, "description": "Tap the matching contact in the result list",
                     "target_screen": "search_results", "action": "tap",
                     "target_selector": {"text": "{{recipient_name}}"},
-                    "params": {}, "confirm_required": False, "timeout_ms": 3000,
+                    "params": {}, "confirm_required": False, "timeout_ms": 4000,
                     "on_failure": "ask_user",
                 },
                 {
-                    "step": 5, "description": "Type message",
+                    "step": 8, "description": "Tap message input field and type the message",
                     "target_screen": "chat", "action": "type",
                     "target_selector": {"viewId": "com.whatsapp:id/entry"},
                     "params": {"text": "{{message_text}}"},
                     "confirm_required": False, "timeout_ms": 3000, "on_failure": None,
                 },
                 {
-                    "step": 6, "description": "Send message (CONFIRMATION REQUIRED)",
+                    "step": 9, "description": "Tap send",
                     "target_screen": "chat", "action": "tap",
                     "target_selector": {"contentDescription": "Send"},
-                    "params": {}, "confirm_required": True, "timeout_ms": 3000,
+                    "params": {}, "confirm_required": False, "timeout_ms": 3000,
                     "on_failure": "ask_user",
                 },
             ],
-            "notes": "Verified for WhatsApp 2.24.x. Update selectors if WA changes layout.",
+            "notes": (
+                "Step 3 (back) is intentional — handles the case where WhatsApp is "
+                "in foreground but inside a different chat. If already on chats list, "
+                "back is a no-op and we proceed."
+            ),
         },
     },
 
@@ -169,11 +194,14 @@ PLAYBOOKS: list[dict[str, Any]] = [
     },
 
     # ─── Netflix ─────────────────────────────────────────────────────
+    # Conditional flow: handles profile picker (taps first profile),
+    # handles being inside a movie (back to home first), then searches + plays.
+    # Vision resolver fills gaps when Netflix changes its viewIds.
     {
         "app_package": "com.netflix.mediaclient",
         "app_name": "Netflix",
         "intent": "search_and_play",
-        "reliability_score": 0.80,
+        "reliability_score": 0.75,
         "source_doc_url": "https://help.netflix.com/",
         "steps_json": {
             "app_package": "com.netflix.mediaclient",
@@ -181,28 +209,45 @@ PLAYBOOKS: list[dict[str, Any]] = [
             "intent": "search_and_play",
             "inputs": ["title"],
             "steps": [
-                {"step": 1, "description": "Launch Netflix", "target_screen": "any",
+                {"step": 1, "description": "Launch or focus Netflix", "target_screen": "any",
                  "action": "launch", "target_selector": {"package": "com.netflix.mediaclient"},
                  "params": {}, "confirm_required": False, "timeout_ms": 8000,
                  "on_failure": "abort"},
-                {"step": 2, "description": "Tap search", "target_screen": "home",
+                {"step": 2, "description": "Wait for Netflix splash to clear", "target_screen": "any",
+                 "action": "wait", "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 3500, "on_failure": None},
+                {"step": 3, "description": "If profile picker is showing, tap the first profile (vision resolver handles it)",
+                 "target_screen": "profile_picker", "action": "tap",
+                 "target_selector": {"text": "Who's watching?"},
+                 "params": {}, "confirm_required": False, "timeout_ms": 2000,
+                 "on_failure": None},
+                {"step": 4, "description": "If currently watching a video, back out to navigate", "target_screen": "any",
+                 "action": "back", "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 800, "on_failure": None},
+                {"step": 5, "description": "Tap search icon in bottom nav", "target_screen": "home",
                  "action": "tap", "target_selector": {"contentDescription": "Search"},
-                 "params": {}, "confirm_required": False, "timeout_ms": 3000,
+                 "params": {}, "confirm_required": False, "timeout_ms": 4000,
                  "on_failure": "retry_once"},
-                {"step": 3, "description": "Type title", "target_screen": "search",
-                 "action": "type", "target_selector": {"viewId": "com.netflix.mediaclient:id/search_edit_text"},
+                {"step": 6, "description": "Type the title to search",
+                 "target_screen": "search", "action": "type",
+                 "target_selector": {"viewId": "com.netflix.mediaclient:id/search_edit_text"},
                  "params": {"text": "{{title}}"}, "confirm_required": False,
                  "timeout_ms": 3000, "on_failure": None},
-                {"step": 4, "description": "Tap first result", "target_screen": "search_results",
-                 "action": "tap", "target_selector": {"viewId": "com.netflix.mediaclient:id/result_thumb"},
+                {"step": 7, "description": "Wait for search results", "target_screen": "search_results",
+                 "action": "wait", "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 1500, "on_failure": None},
+                {"step": 8, "description": "Tap the first matching title in results",
+                 "target_screen": "search_results", "action": "tap",
+                 "target_selector": {"contentDescription": "{{title}}"},
                  "params": {}, "confirm_required": False, "timeout_ms": 5000,
                  "on_failure": "ask_user"},
-                {"step": 5, "description": "Tap play button", "target_screen": "title_details",
-                 "action": "tap", "target_selector": {"contentDescription": "Play"},
+                {"step": 9, "description": "Tap play on the title details page",
+                 "target_screen": "title_details", "action": "tap",
+                 "target_selector": {"contentDescription": "Play"},
                  "params": {}, "confirm_required": False, "timeout_ms": 5000,
                  "on_failure": "ask_user"},
             ],
-            "notes": "",
+            "notes": "Step 3 + 4 are conditional cleanup — if not on profile picker / playback, those steps no-op.",
         },
     },
 
@@ -435,9 +480,9 @@ PLAYBOOKS: list[dict[str, Any]] = [
 
 
 async def main() -> None:
-    print(f"Seeding {len(PLAYBOOKS)} playbooks…")
+    print(f"Upserting {len(PLAYBOOKS)} playbooks…")
     inserted = 0
-    skipped = 0
+    updated = 0
     async with session_scope() as db:
         for spec in PLAYBOOKS:
             stmt = select(Playbook).where(
@@ -447,7 +492,15 @@ async def main() -> None:
             )
             existing = (await db.execute(stmt)).scalar_one_or_none()
             if existing is not None:
-                skipped += 1
+                # Update steps + reliability so iterating on playbooks works
+                # via plain redeploy. Existing reliability_score is preserved
+                # only if the seed sets a lower value (don't downgrade live data).
+                existing.steps_json = spec["steps_json"]
+                existing.app_name = spec["app_name"]
+                existing.source_doc_url = spec.get("source_doc_url")
+                if spec["reliability_score"] > float(existing.reliability_score):
+                    existing.reliability_score = spec["reliability_score"]
+                updated += 1
                 continue
             db.add(
                 Playbook(
@@ -461,7 +514,7 @@ async def main() -> None:
                 )
             )
             inserted += 1
-    print(f"Inserted {inserted}, skipped {skipped}.")
+    print(f"Inserted {inserted}, updated {updated}.")
 
 
 if __name__ == "__main__":
