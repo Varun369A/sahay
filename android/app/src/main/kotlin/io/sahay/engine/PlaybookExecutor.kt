@@ -2,23 +2,33 @@ package io.sahay.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import io.sahay.data.api.PlannedStepOut
+import io.sahay.data.api.ResolveRequest
+import io.sahay.data.api.SahayApi
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Executes a list of PlannedStepOut against the live device using an
- * AccessibilityService instance.
+ * Executes one PlannedStepOut against the live device.
  *
- * Hard rules:
- *   • Refuses if the foreground app is on the payment blocklist.
- *   • Caller (typically SahayForegroundService) is responsible for showing
- *     the ConfirmationActivity when step.confirmRequired is true.
- *   • Returns ExecutionResult per step so caller can stop on failure.
+ * Strategy when target node isn't found by the playbook's fixed selector:
+ *   1. Try fuzzy matching (text/contentDescription substring, case-insensitive)
+ *   2. Fall back to backend `/v1/actions/resolve` — Claude reads the live
+ *      accessibility tree and picks the right node
+ *   3. Only fail if both miss
+ *
+ * This makes Sahay survive UI drift (Netflix changing viewIds) and
+ * conditional screens (account picker, splash, login walls).
  */
-class PlaybookExecutor(private val service: AccessibilityService) {
+class PlaybookExecutor(
+    private val service: AccessibilityService,
+    private val api: SahayApi,
+) {
 
     sealed class StepOutcome {
         data object Success : StepOutcome()
@@ -27,23 +37,20 @@ class PlaybookExecutor(private val service: AccessibilityService) {
         data object Aborted : StepOutcome()
     }
 
-    suspend fun executeStep(step: PlannedStepOut): StepOutcome {
-        // Hard rule: payment blocklist check on every step.
+    suspend fun executeStep(step: PlannedStepOut, appPackage: String): StepOutcome {
         val rootPkg = service.rootInActiveWindow?.packageName?.toString()
-        if (PaymentBlocklist.isBlocked(rootPkg)) {
-            return StepOutcome.Aborted
-        }
+        if (PaymentBlocklist.isBlocked(rootPkg)) return StepOutcome.Aborted
 
         return when (step.action) {
             "launch" -> launchApp(step)
-            "tap" -> tap(step)
-            "long_press" -> tap(step, longPress = true)
-            "type" -> type(step)
+            "tap" -> tapWithFallback(step, appPackage, longPress = false)
+            "long_press" -> tapWithFallback(step, appPackage, longPress = true)
+            "type" -> typeWithFallback(step, appPackage)
             "back" -> { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); StepOutcome.Success }
             "home" -> { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); StepOutcome.Success }
             "wait" -> { delay(step.timeoutMs.toLong()); StepOutcome.Success }
-            "verify" -> verify(step)
-            "read" -> StepOutcome.Success    // no-op — caller can read tree separately
+            "verify" -> verify(step, appPackage)
+            "read" -> StepOutcome.Success
             "swipe" -> StepOutcome.Failed("swipe_not_implemented_v1")
             else -> StepOutcome.Failed("unknown_action:${step.action}")
         }
@@ -59,15 +66,19 @@ class PlaybookExecutor(private val service: AccessibilityService) {
             ?: return StepOutcome.Failed("app_not_installed:$pkg")
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         service.startActivity(intent)
-        delay(2000)   // give the app time to come up
+        delay(2_500)   // give the app time to come up
         return StepOutcome.Success
     }
 
-    private suspend fun tap(step: PlannedStepOut, longPress: Boolean = false): StepOutcome {
-        val node = waitForNode(step) ?: return StepOutcome.Failed("node_not_found")
+    private suspend fun tapWithFallback(
+        step: PlannedStepOut,
+        appPackage: String,
+        longPress: Boolean,
+    ): StepOutcome {
+        val node = waitForNode(step) ?: askResolverFor(step, appPackage)
+            ?: return StepOutcome.Failed("node_not_found")
         val action = if (longPress) AccessibilityNodeInfo.ACTION_LONG_CLICK
                      else AccessibilityNodeInfo.ACTION_CLICK
-        // Walk up to find a clickable ancestor if leaf isn't itself clickable.
         var target: AccessibilityNodeInfo? = node
         while (target != null && !target.isClickable) target = target.parent
         target ?: return StepOutcome.Failed("no_clickable_ancestor")
@@ -75,8 +86,9 @@ class PlaybookExecutor(private val service: AccessibilityService) {
         return if (ok) StepOutcome.Success else StepOutcome.Failed("perform_action_returned_false")
     }
 
-    private suspend fun type(step: PlannedStepOut): StepOutcome {
-        val node = waitForNode(step) ?: return StepOutcome.Failed("node_not_found")
+    private suspend fun typeWithFallback(step: PlannedStepOut, appPackage: String): StepOutcome {
+        val node = waitForNode(step) ?: askResolverFor(step, appPackage)
+            ?: return StepOutcome.Failed("node_not_found")
         val text = (step.params["text"] as? JsonPrimitive)?.contentOrNull
             ?: return StepOutcome.Failed("missing_text_param")
         val args = Bundle().apply {
@@ -86,19 +98,63 @@ class PlaybookExecutor(private val service: AccessibilityService) {
         return if (ok) StepOutcome.Success else StepOutcome.Failed("set_text_failed")
     }
 
-    private suspend fun verify(step: PlannedStepOut): StepOutcome {
-        val node = waitForNode(step)
+    private suspend fun verify(step: PlannedStepOut, appPackage: String): StepOutcome {
+        val node = waitForNode(step) ?: askResolverFor(step, appPackage)
         return if (node != null) StepOutcome.Success else StepOutcome.Failed("verify_node_missing")
     }
 
+    // ─── Selector lookup ─────────────────────────────────────────────
+
     private suspend fun waitForNode(step: PlannedStepOut): AccessibilityNodeInfo? {
         val deadline = System.currentTimeMillis() + step.timeoutMs
-        val selectors = step.targetSelector.mapValues { (it.value as? JsonPrimitive)?.contentOrNull }
+        val selectors = step.targetSelector.mapValues {
+            (it.value as? JsonPrimitive)?.contentOrNull
+        }
         while (System.currentTimeMillis() < deadline) {
             val root = service.rootInActiveWindow
             ScreenTreeReader.findNode(root, selectors)?.let { return it }
             delay(200)
         }
         return null
+    }
+
+    /**
+     * Vision-grounded fallback: ask backend Claude to pick the right node
+     * from the live accessibility tree. Costs ~₹0.1, only fires on miss.
+     */
+    private suspend fun askResolverFor(
+        step: PlannedStepOut,
+        appPackage: String,
+    ): AccessibilityNodeInfo? {
+        val root = service.rootInActiveWindow ?: return null
+        val tree = ScreenTreeReader.summarize(root, maxNodes = 250)
+
+        val resolved = try {
+            api.resolveStep(
+                ResolveRequest(
+                    appPackage = appPackage,
+                    stepDescription = step.description,
+                    desiredAction = step.action,
+                    screenTreeSummary = tree,
+                    inputs = JsonObject(step.params),
+                )
+            )
+        } catch (t: Throwable) {
+            Log.e(TAG, "resolve_call_failed", t)
+            return null
+        }
+
+        if (!resolved.found) {
+            Log.i(TAG, "resolver_no_match step=${step.description} notes=${resolved.notes}")
+            return null
+        }
+
+        val newSelectors = resolved.selector.mapValues { it.value.jsonPrimitive.contentOrNull }
+        Log.i(TAG, "resolver_found selectors=$newSelectors conf=${resolved.confidence}")
+        return ScreenTreeReader.findNode(root, newSelectors)
+    }
+
+    private companion object {
+        const val TAG = "PlaybookExec"
     }
 }

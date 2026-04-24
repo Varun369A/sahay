@@ -60,6 +60,25 @@ class DispatchResponse(BaseModel):
     notes: str | None = None
 
 
+class ResolveRequest(BaseModel):
+    """When a fixed selector misses on-device, ask Claude to pick the right
+    node from the live accessibility tree."""
+    app_package: str = Field(min_length=3, max_length=255)
+    step_description: str = Field(max_length=300)
+    desired_action: str = Field(pattern=r"^(tap|long_press|type|swipe|wait|read|verify|back|home)$")
+    screen_tree_summary: str = Field(max_length=20_000)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResolveResponse(BaseModel):
+    found: bool
+    selector: dict[str, Any] = Field(default_factory=dict)
+    action: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = 0.0
+    notes: str | None = None
+
+
 class UsageOut(BaseModel):
     daily_count: int
     daily_limit: int

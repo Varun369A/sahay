@@ -16,9 +16,11 @@ from sahay.schemas.action import (
     PlanRequest,
     PlanResponse,
     PlannedStepOut,
+    ResolveRequest,
+    ResolveResponse,
     UsageOut,
 )
-from sahay.services import action_planner, intent_dispatcher, usage_meter
+from sahay.services import action_planner, intent_dispatcher, step_resolver, usage_meter
 from sahay.services.rate_limiter import rate_limit
 from sahay.util.logging import get_logger
 
@@ -106,6 +108,41 @@ async def dispatch_intent(
         app_package=result.app_package,
         intent=result.intent,
         inputs=result.inputs or {},
+        confidence=result.confidence,
+        notes=result.notes,
+    )
+
+
+@router.post(
+    "/resolve",
+    response_model=ResolveResponse,
+    dependencies=[Depends(rate_limit("resolve", per_minute=120))],
+)
+async def resolve_step(
+    body: ResolveRequest,
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(current_user),
+) -> ResolveResponse:
+    """Vision-grounded fallback when on-device selector misses.
+
+    Sahay's PlaybookExecutor calls this when waitForNode times out — Claude
+    reads the live accessibility tree and picks the right node.
+    """
+    if is_payment_app(body.app_package):
+        raise HTTPException(403, "payment_app_blocked")
+
+    result = await step_resolver.resolve(
+        app_package=body.app_package,
+        step_description=body.step_description,
+        desired_action=body.desired_action,
+        screen_tree_summary=body.screen_tree_summary,
+        inputs=body.inputs,
+    )
+    return ResolveResponse(
+        found=result.found,
+        selector=result.selector,
+        action=result.action,
+        params=result.params,
         confidence=result.confidence,
         notes=result.notes,
     )

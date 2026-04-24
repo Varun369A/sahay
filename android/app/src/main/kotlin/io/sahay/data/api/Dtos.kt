@@ -123,6 +123,25 @@ data class DispatchResponse(
 )
 
 @Serializable
+data class ResolveRequest(
+    @SerialName("app_package") val appPackage: String,
+    @SerialName("step_description") val stepDescription: String,
+    @SerialName("desired_action") val desiredAction: String,
+    @SerialName("screen_tree_summary") val screenTreeSummary: String,
+    val inputs: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+)
+
+@Serializable
+data class ResolveResponse(
+    val found: Boolean,
+    val selector: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val action: String? = null,
+    val params: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val confidence: Double = 0.0,
+    val notes: String? = null,
+)
+
+@Serializable
 data class ActionLogRequest(
     @SerialName("app_package") val appPackage: String,
     val intent: String,

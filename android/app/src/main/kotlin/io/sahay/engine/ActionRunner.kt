@@ -83,7 +83,7 @@ class ActionRunner @Inject constructor(
                 }
             }
 
-            val outcome = executor.executeStep(step)
+            val outcome = executor.executeStep(step, appPackage)
             when (outcome) {
                 is PlaybookExecutor.StepOutcome.Failed -> {
                     log(appPackage, intent, "failed", System.currentTimeMillis() - started, failureReason = outcome.reason)

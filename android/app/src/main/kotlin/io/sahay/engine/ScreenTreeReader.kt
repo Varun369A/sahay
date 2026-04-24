@@ -10,37 +10,46 @@ object ScreenTreeReader {
 
     /**
      * Find a node matching ANY of the supplied selectors.
-     * Selectors map keys: "viewId", "text", "contentDescription", "className".
+     * Strategy is tolerant: tries exact match first, then case-insensitive
+     * substring match for text + contentDescription. Falls back to a wide
+     * tree walk for className.
+     *
+     * Selector keys: "viewId", "text", "contentDescription", "className".
      */
     fun findNode(root: AccessibilityNodeInfo?, selectors: Map<String, String?>): AccessibilityNodeInfo? {
         if (root == null) return null
 
         // Strategy 1: viewId — most reliable.
-        selectors["viewId"]?.let { id ->
+        selectors["viewId"]?.takeIf { it.isNotBlank() }?.let { id ->
             val matches = root.findAccessibilityNodeInfosByViewId(id)
             if (!matches.isNullOrEmpty()) return matches.first()
         }
 
-        // Strategy 2: text — exact match.
-        selectors["text"]?.let { txt ->
-            val matches = root.findAccessibilityNodeInfosByText(txt)
-            val exact = matches?.firstOrNull { it.text?.toString()?.equals(txt, ignoreCase = true) == true }
+        // Strategy 2: exact text.
+        selectors["text"]?.takeIf { it.isNotBlank() }?.let { txt ->
+            val exact = walkFind(root) { it.text?.toString().equals(txt, ignoreCase = true) }
             if (exact != null) return exact
-            if (!matches.isNullOrEmpty()) return matches.first()
+            // Fuzzy: contains
+            val fuzzy = walkFind(root) {
+                it.text?.toString()?.contains(txt, ignoreCase = true) == true
+            }
+            if (fuzzy != null) return fuzzy
         }
 
-        // Strategy 3: contentDescription — depth-first walk.
-        selectors["contentDescription"]?.let { cd ->
-            walk(root)?.let { it ->
-                if (it.contentDescription?.toString()?.equals(cd, ignoreCase = true) == true) return it
+        // Strategy 3: contentDescription.
+        selectors["contentDescription"]?.takeIf { it.isNotBlank() }?.let { cd ->
+            val exact = walkFind(root) {
+                it.contentDescription?.toString().equals(cd, ignoreCase = true)
             }
-            return walkFind(root) {
-                it.contentDescription?.toString()?.equals(cd, ignoreCase = true) == true
+            if (exact != null) return exact
+            val fuzzy = walkFind(root) {
+                it.contentDescription?.toString()?.contains(cd, ignoreCase = true) == true
             }
+            if (fuzzy != null) return fuzzy
         }
 
         // Strategy 4: className.
-        selectors["className"]?.let { cn ->
+        selectors["className"]?.takeIf { it.isNotBlank() }?.let { cn ->
             return walkFind(root) { it.className?.toString() == cn }
         }
 
@@ -56,14 +65,20 @@ object ScreenTreeReader {
         walkAll(root) { node ->
             if (count >= maxNodes) return@walkAll false
             val viewId = node.viewIdResourceName ?: ""
-            val cls = node.className?.toString() ?: ""
-            val cd = node.contentDescription?.toString()?.take(40) ?: ""
-            val hasText = (node.text?.toString()?.isNotEmpty() == true)
+            val cls = node.className?.toString()?.substringAfterLast('.') ?: ""
+            val cd = node.contentDescription?.toString()?.take(60)?.replace("\"", "'") ?: ""
+            val text = node.text?.toString()?.take(60)?.replace("\"", "'") ?: ""
+            // Skip empty noise nodes — keeps token count low.
+            if (viewId.isBlank() && cd.isBlank() && text.isBlank() && !node.isClickable) {
+                count++
+                return@walkAll true
+            }
             sb.append("{\"vid\":\"").append(viewId).append('"')
             sb.append(",\"cls\":\"").append(cls).append('"')
-            sb.append(",\"cd\":\"").append(cd.replace("\"", "")).append('"')
-            sb.append(",\"hasText\":").append(hasText)
-            sb.append(",\"clickable\":").append(node.isClickable)
+            if (cd.isNotEmpty()) sb.append(",\"cd\":\"").append(cd).append('"')
+            if (text.isNotEmpty()) sb.append(",\"text\":\"").append(text).append('"')
+            if (node.isClickable) sb.append(",\"clickable\":true")
+            if (node.isEditable) sb.append(",\"editable\":true")
             sb.append("},")
             count++
             true
@@ -74,12 +89,6 @@ object ScreenTreeReader {
     }
 
     // ─── Internals ────────────────────────────────────────────────────
-
-    private fun walk(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var cur: AccessibilityNodeInfo? = root
-        while (cur != null) return cur
-        return null
-    }
 
     private inline fun walkFind(
         root: AccessibilityNodeInfo,

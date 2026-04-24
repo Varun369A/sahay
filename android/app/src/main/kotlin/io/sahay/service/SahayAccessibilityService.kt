@@ -3,8 +3,11 @@ package io.sahay.service
 import android.accessibilityservice.AccessibilityService
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import dagger.hilt.android.AndroidEntryPoint
+import io.sahay.data.api.SahayApi
 import io.sahay.engine.KillSwitch
 import io.sahay.engine.PlaybookExecutor
+import javax.inject.Inject
 
 /**
  * Sahay's "hands". Injects clicks + types into other apps via the
@@ -15,14 +18,17 @@ import io.sahay.engine.PlaybookExecutor
  *   • Refuses any action when foreground app is on PaymentBlocklist
  *   • Volume-down 3x within 2s = global kill switch (KillSwitch.engage)
  */
+@AndroidEntryPoint
 class SahayAccessibilityService : AccessibilityService() {
+
+    @Inject lateinit var api: SahayApi
 
     @Volatile private var executor: PlaybookExecutor? = null
     private var lastVolDownTimes: MutableList<Long> = mutableListOf()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        executor = PlaybookExecutor(this)
+        executor = PlaybookExecutor(this, api)
         INSTANCE = this
     }
 
