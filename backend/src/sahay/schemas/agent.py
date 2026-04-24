@@ -66,6 +66,7 @@ class AgentTool(BaseModel):
         "give_up",          # cannot continue
         "remember",         # persist a fact about the user (long-term memory)
         "forget",           # delete a fact from long-term memory
+        "create_document",  # create resume/report/presentation/letter (server-side)
     ]
     # tap_node / type_in_node — the `i` from the tree nodes list
     node_index: int | None = Field(default=None, ge=0, le=500)
@@ -90,6 +91,11 @@ class AgentTool(BaseModel):
     value: str | None = Field(default=None, max_length=2000)
     category: str | None = Field(default=None, max_length=32)
     importance: int | None = Field(default=None, ge=1, le=10)
+    # create_document
+    kind: str | None = Field(default=None, max_length=32,
+                             description="Document kind: resume|report|presentation|letter|plain")
+    prompt: str | None = Field(default=None, max_length=4000,
+                               description="Doc brief — what the content should be.")
     # Metadata
     reasoning: str | None = Field(default=None, max_length=500,
                                    description="Claude's 1-line rationale")

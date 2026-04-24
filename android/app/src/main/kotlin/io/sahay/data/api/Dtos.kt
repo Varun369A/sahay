@@ -265,6 +265,27 @@ data class GenerateImageRequest(
 @Serializable
 data class EditImageRequest(val prompt: String)
 
+// ─── Documents (agent-generated resume / report / PPT / letter) ─────
+
+@Serializable
+data class CreateDocumentRequest(
+    val kind: String,                        // resume | report | presentation | letter | plain
+    val prompt: String,
+    val title: String? = null,
+)
+
+@Serializable
+data class CreateDocumentResponse(
+    @SerialName("file_id") val fileId: String,
+    val name: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("signed_url") val signedUrl: String,
+    val kind: String,
+    val format: String,
+    @SerialName("tokens_used") val tokensUsed: Int,
+    @SerialName("cost_inr_paise") val costInrPaise: Int,
+)
+
 // ─── Long-term memory ────────────────────────────────────────────────
 
 @Serializable

@@ -82,6 +82,12 @@ interface SahayApi {
     @DELETE("/v1/files/{id}")
     suspend fun deleteFile(@Path("id") id: String)
 
+    // ─── Documents ───────────────────────────────────────────────────
+    @POST("/v1/documents")
+    suspend fun createDocument(
+        @Body body: CreateDocumentRequest,
+    ): CreateDocumentResponse
+
     // ─── Long-term memory ────────────────────────────────────────────
     @GET("/v1/memory/important-contacts")
     suspend fun importantContacts(

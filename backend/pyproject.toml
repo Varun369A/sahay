@@ -35,6 +35,10 @@ dependencies = [
     "replicate>=1.0.4",                  # image generation
     "redis[hiredis]>=5.2.0",             # Upstash Redis
 
+    # Document generation (Round 3 — resume / report / presentation / letter)
+    "reportlab>=4.2.0",                  # PDF rendering
+    "python-pptx>=1.0.0",                # PPTX rendering
+
     # HTTP + retries
     "httpx>=0.28.0",
     "tenacity>=9.0.0",
