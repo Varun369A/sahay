@@ -141,6 +141,47 @@ data class ResolveResponse(
     val notes: String? = null,
 )
 
+// ─── Agent endpoint ─────────────────────────────────────────────────
+
+@Serializable
+data class AgentObservation(
+    val goal: String,
+    @SerialName("app_package") val appPackage: String? = null,
+    @SerialName("screen_tree_summary") val screenTreeSummary: String = "",
+    @SerialName("screenshot_base64") val screenshotBase64: String? = null,
+    @SerialName("step_index") val stepIndex: Int = 0,
+    val history: List<kotlinx.serialization.json.JsonObject> = emptyList(),
+    @SerialName("screen_width") val screenWidth: Int? = null,
+    @SerialName("screen_height") val screenHeight: Int? = null,
+)
+
+@Serializable
+data class AgentStepRequest(val observation: AgentObservation)
+
+@Serializable
+data class AgentTool(
+    val tool: String,
+    val x: Int? = null,
+    val y: Int? = null,
+    val selector: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val text: String? = null,
+    val direction: String? = null,
+    val distance: Int? = null,
+    @SerialName("duration_ms") val durationMs: Int? = null,
+    @SerialName("app_package") val appPackage: String? = null,
+    val message: String? = null,
+    val reasoning: String? = null,
+    val confidence: Double = 0.5,
+)
+
+@Serializable
+data class AgentStepResponse(
+    val action: AgentTool,
+    val model: String,
+    @SerialName("tokens_used") val tokensUsed: Int = 0,
+    @SerialName("cost_inr_paise") val costInrPaise: Int = 0,
+)
+
 @Serializable
 data class ActionLogRequest(
     @SerialName("app_package") val appPackage: String,

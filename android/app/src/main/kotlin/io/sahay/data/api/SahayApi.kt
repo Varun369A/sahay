@@ -59,6 +59,9 @@ interface SahayApi {
     @POST("/v1/actions/resolve")
     suspend fun resolveStep(@Body body: ResolveRequest): ResolveResponse
 
+    @POST("/v1/agent/step")
+    suspend fun agentStep(@Body body: AgentStepRequest): AgentStepResponse
+
     @POST("/v1/actions/log")
     suspend fun logAction(@Body body: ActionLogRequest)
 

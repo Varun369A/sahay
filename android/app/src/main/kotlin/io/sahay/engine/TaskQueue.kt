@@ -87,18 +87,12 @@ class TaskWorker @Inject constructor(
     private suspend fun handle(task: TaskQueue.Task) {
         when (task) {
             is TaskQueue.Task.Utterance -> {
+                // Full-auto: agent loop drives — no regex intent parsing.
                 Log.i(TAG, "handle_utterance text=${task.text}")
-                val parsed = parser.parse(task.text, task.locale) ?: return run {
-                    Log.i(TAG, "intent_unrecognized")
-                }
-                SahayForegroundService.runIntent(
-                    context = context,
-                    appPackage = parsed.appPackage,
-                    intent = parsed.intent,
-                    inputsJson = json.encodeToString(JsonObject.serializer(), parsed.inputs),
-                )
+                SahayForegroundService.runAgent(context = context, goal = task.text)
             }
             is TaskQueue.Task.DispatchedAction -> {
+                // Legacy path — reuse old runner for pre-structured actions.
                 Log.i(TAG, "handle_dispatched ${task.appPackage}/${task.intent}")
                 SahayForegroundService.runIntent(
                     context = context,

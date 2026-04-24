@@ -58,25 +58,16 @@ class HomeViewModel @Inject constructor(
             }
             _state.update { it.copy(transcript = transcription.text) }
 
-            val parsed = parser.parse(transcription.text, locale = transcription.language)
-            if (parsed == null) {
-                _state.update {
-                    it.copy(
-                        mode = HomeState.Mode.Idle,
-                        errorKey = "I couldn't match that to a known action. Try: 'play X on Netflix', 'send WhatsApp to Y saying Z'.",
-                    )
-                }
-                return@launch
-            }
-
+            // Full-auto: hand the raw utterance to the Claude-driven AgentLoop.
+            // The agent decides everything — which app, what steps, when done.
             _state.update { it.copy(mode = HomeState.Mode.Running) }
-            SahayForegroundService.runIntent(
+            SahayForegroundService.runAgent(
                 context = context,
-                appPackage = parsed.appPackage,
-                intent = parsed.intent,
-                inputsJson = json.encodeToString(JsonObject.serializer(), parsed.inputs),
+                goal = transcription.text,
             )
-            _state.update { it.copy(mode = HomeState.Mode.Idle, lastResult = "Sent: ${parsed.intent}") }
+            _state.update {
+                it.copy(mode = HomeState.Mode.Idle, lastResult = "Running: ${transcription.text}")
+            }
         }
     }
 

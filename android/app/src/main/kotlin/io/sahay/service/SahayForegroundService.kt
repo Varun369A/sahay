@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 class SahayForegroundService : Service() {
 
     @Inject lateinit var runner: ActionRunner
+    @Inject lateinit var agentLoop: io.sahay.engine.AgentLoop
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var currentJob: Job? = null
@@ -52,6 +53,17 @@ class SahayForegroundService : Service() {
                 currentJob?.cancel()
                 currentJob = scope.launch {
                     runner.run(appPackage, sahayIntent, inputsJson)
+                }
+            }
+            CMD_RUN_AGENT -> {
+                // Full-auto mode: Claude drives the phone screen-by-screen.
+                val goal = intent.getStringExtra(EXTRA_GOAL) ?: return START_STICKY
+                currentJob?.cancel()
+                currentJob = scope.launch {
+                    val outcome = agentLoop.run(goal)
+                    android.util.Log.i("SahayForegroundSvc",
+                        "agent_done success=${outcome.success} steps=${outcome.stepsUsed} " +
+                        "reason=${outcome.reason} summary=${outcome.summary}")
                 }
             }
             CMD_STOP -> stopSelf()
@@ -94,8 +106,10 @@ class SahayForegroundService : Service() {
         const val EXTRA_APP_PACKAGE = "app_package"
         const val EXTRA_INTENT = "intent"
         const val EXTRA_INPUTS_JSON = "inputs_json"
+        const val EXTRA_GOAL = "goal"
 
         const val CMD_RUN_INTENT = "run_intent"
+        const val CMD_RUN_AGENT = "run_agent"
         const val CMD_STOP = "stop"
 
         private const val NOTIF_ID = 1001
@@ -106,6 +120,19 @@ class SahayForegroundService : Service() {
                 putExtra(EXTRA_APP_PACKAGE, appPackage)
                 putExtra(EXTRA_INTENT, intent)
                 putExtra(EXTRA_INPUTS_JSON, inputsJson)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(i)
+            } else {
+                context.startService(i)
+            }
+        }
+
+        /** Full-auto mode — Claude agent drives the phone. */
+        fun runAgent(context: android.content.Context, goal: String) {
+            val i = Intent(context, SahayForegroundService::class.java).apply {
+                putExtra(EXTRA_COMMAND, CMD_RUN_AGENT)
+                putExtra(EXTRA_GOAL, goal)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
