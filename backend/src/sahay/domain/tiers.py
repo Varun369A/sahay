@@ -33,8 +33,11 @@ class TierLimits:
 # Pricing in INR. Update with care — these power Razorpay subscription plans.
 TIERS: dict[Tier, TierLimits] = {
     Tier.FREE: TierLimits(
-        daily_actions=50,
-        weekly_actions=200,
+        # Agent mode burns 10-20 steps per task (one Claude call each),
+        # so "50 actions/day" = ~3 tasks. Bumped to 500/day so a free
+        # user gets meaningful daily usage (~25-50 full tasks).
+        daily_actions=500,
+        weekly_actions=2_000,
         max_apps=5,
         multilingual_voice=False,
         voice_clone=False,
