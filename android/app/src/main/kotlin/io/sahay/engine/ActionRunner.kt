@@ -70,18 +70,15 @@ class ActionRunner @Inject constructor(
             ?: return@withContext RunResult(success = false, reason = "executor_unavailable")
 
         val started = System.currentTimeMillis()
+        // CONFIRMATIONS REMOVED.
+        // Safety still enforced by:
+        //   1. PaymentBlocklist (every step + every executor call)
+        //   2. The voice loop itself — user can stop with kill switch
+        //      (volume-down 3x) at any time
+        //   3. Backend tier limits + per-app allowlist
+        // step.confirmRequired is preserved on the protocol but no longer
+        // shown — turn back on per-app via Settings if user requests later.
         for (step in plan.steps) {
-            // Only confirm steps the playbook itself flagged as destructive
-            // (Send / Post / Save / Pay-style). Earlier blanket rule on
-            // low-reliability is gone — it was causing N confirmations per
-            // task, killing UX. Reliability scoring still applies elsewhere.
-            if (step.confirmRequired) {
-                val approved = ConfirmationActivity.requestApproval(context, step)
-                if (!approved) {
-                    log(appPackage, intent, "aborted", System.currentTimeMillis() - started, userAborted = true)
-                    return@withContext RunResult(success = false, reason = "user_aborted")
-                }
-            }
 
             val outcome = executor.executeStep(step, appPackage)
             when (outcome) {

@@ -15,6 +15,7 @@
     <!-- ─── Foreground service (always-on Sahay) ────────────────────────── -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- ─── Wake (handle voice trigger reliably) ───────────────────────── -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -82,6 +83,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Persistent on-device assistant runtime that executes user-approved automations across allowlisted apps via Accessibility Service. No payment apps. All actions logged on-device." />
         </service>
+
+        <!-- ─── Wake Word Service (Picovoice Porcupine, mic always-on) ──── -->
+        <service
+            android:name=".service.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
     </application>
 </manifest>
