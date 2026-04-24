@@ -155,6 +155,47 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
             }
         }
 
+        // ─── Mood picker (personality / tone) ───────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    stringResource(R.string.settings_mood_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    stringResource(R.string.settings_mood_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SAHAY_MOODS.forEach { (key, label, _) ->
+                        FilterChip(
+                            selected = (state.mood ?: "default") == key,
+                            onClick = { vm.setMood(key) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                val selectedDesc = SAHAY_MOODS.firstOrNull {
+                    it.first == (state.mood ?: "default")
+                }?.third
+                if (!selectedDesc.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        selectedDesc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
         // ─── Notification awareness ─────────────────────────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {

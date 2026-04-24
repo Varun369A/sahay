@@ -186,6 +186,7 @@ data class AgentStepResponse(
     val model: String,
     @SerialName("tokens_used") val tokensUsed: Int = 0,
     @SerialName("cost_inr_paise") val costInrPaise: Int = 0,
+    val mood: String? = null,
 )
 
 @Serializable
@@ -219,6 +220,7 @@ data class MeResponse(
     val locale: String,
     val tier: String,
     val role: String? = null,
+    val mood: String? = null,
     @SerialName("email_verified") val emailVerified: Boolean,
     @SerialName("created_at") val createdAt: String,
     @SerialName("last_active_at") val lastActiveAt: String?,
@@ -229,6 +231,7 @@ data class UpdateMeRequest(
     @SerialName("display_name") val displayName: String? = null,
     val locale: String? = null,
     val role: String? = null,
+    val mood: String? = null,
 )
 
 @Serializable

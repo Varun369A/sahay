@@ -19,6 +19,7 @@ from sahay.db.session import get_db_session
 from sahay.deps import current_user
 from sahay.domain.payment_blocklist import is_payment_app
 from sahay.schemas.user import (
+    MOOD_VALUES,
     ROLE_VALUES,
     AppGrantOut,
     DeleteMyDataResponse,
@@ -61,6 +62,11 @@ async def update_me(
         if normalized not in ROLE_VALUES:
             raise HTTPException(422, "invalid_role")
         user.role = normalized
+    if body.mood is not None:
+        normalized = body.mood.strip().lower()
+        if normalized not in MOOD_VALUES:
+            raise HTTPException(422, "invalid_mood")
+        user.mood = normalized
     await db.flush()
     return MeResponse.model_validate(user)
 

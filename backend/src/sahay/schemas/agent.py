@@ -121,3 +121,4 @@ class AgentStepResponse(BaseModel):
     model: str
     tokens_used: int = 0
     cost_inr_paise: int = 0
+    mood: str | None = None       # resolved mood the agent is running with

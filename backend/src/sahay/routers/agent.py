@@ -68,4 +68,5 @@ async def agent_step(
         model=result.model,
         tokens_used=result.tokens_used,
         cost_inr_paise=result.cost_inr_paise,
+        mood=result.mood,
     )

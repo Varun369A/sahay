@@ -30,6 +30,9 @@
     <string name="settings_role_title">What do you do?</string>
     <string name="settings_role_body">Sahay tailors its tone, examples, and document templates to your role. Change anytime.</string>
 
+    <string name="settings_mood_title">How should Sahay talk to you?</string>
+    <string name="settings_mood_body">Pick a personality. You can change it any time — takes effect on the next action.</string>
+
     <!-- Onboarding -->
     <string name="onboarding_title">Welcome to Sahay</string>
     <string name="onboarding_subtitle">Your AI hands. Voice-driven. Privacy-first.</string>

@@ -116,6 +116,14 @@ class AgentLoop @Inject constructor(
             Log.i(TAG, "step=$step tool=${action.tool} model=${resp.model} " +
                 "reasoning=${action.reasoning ?: ""}")
 
+            // 2b. First-action ack — on step 0, if the agent's first move is
+            // a device tool (not already a speak/ask_user), give the user a
+            // short mood-aware phrase BEFORE dispatching so silence doesn't
+            // read as "app is broken". Mood comes from the backend profile.
+            if (step == 0 && action.tool !in SILENT_FIRST_TOOLS) {
+                pickFirstAck(resp.mood)?.let { tts.announce(it, whisper = false) }
+            }
+
             // 3. Execute
             val exec = execute(service, action)
 
@@ -396,8 +404,47 @@ class AgentLoop @Inject constructor(
         return metrics.widthPixels to metrics.heightPixels
     }
 
+    /**
+     * Tools where the agent is already about to speak or ask the user —
+     * a redundant ack on top would just talk over Claude's own utterance.
+     */
+    private val SILENT_FIRST_TOOLS = setOf(
+        "speak", "ask_user", "done", "give_up", "wait",
+    )
+
+    /**
+     * Small, non-repeating phrase pool per mood. The agent speaks this
+     * ONCE at step 0 so the user hears a voice immediately after asking
+     * for something, rather than a silent 1–2 seconds while Sahay walks
+     * the screen. Returns null for `focused` — that mood wants silence.
+     */
+    private fun pickFirstAck(mood: String?): String? {
+        val pool = when ((mood ?: "default").lowercase()) {
+            "focused" -> return null                    // silent by design
+            "warm"    -> WARM_ACKS
+            "playful" -> PLAYFUL_ACKS
+            "formal"  -> FORMAL_ACKS
+            else      -> DEFAULT_ACKS
+        }
+        return pool.random()
+    }
+
     private companion object {
         const val TAG = "AgentLoop"
         const val MAX_STEPS = 20
+
+        // Tuned by ear on Google TTS / Samsung TTS at pitch 0.9, rate 0.88.
+        // Keep each under ~4 words — short enough that the actual tool
+        // dispatches while the ack finishes playing.
+        val DEFAULT_ACKS = listOf("On it.", "Got it.", "Sure.", "One sec.")
+        val WARM_ACKS = listOf(
+            "Got you.", "On it — one sec.", "Sure thing.", "Happy to.",
+        )
+        val PLAYFUL_ACKS = listOf(
+            "On it.", "Consider it done.", "Easy.", "Watch this.",
+        )
+        val FORMAL_ACKS = listOf(
+            "Right away.", "Certainly.", "Understood.",
+        )
     }
 }

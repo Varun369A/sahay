@@ -19,7 +19,8 @@ class AppRepository @Inject constructor(private val api: SahayApi) {
         displayName: String? = null,
         locale: String? = null,
         role: String? = null,
-    ): MeResponse = api.updateMe(UpdateMeRequest(displayName, locale, role))
+        mood: String? = null,
+    ): MeResponse = api.updateMe(UpdateMeRequest(displayName, locale, role, mood))
     suspend fun deleteMyData() = api.deleteMyData()
 
     suspend fun listGrants(): List<AppGrantOut> = api.listGrants()

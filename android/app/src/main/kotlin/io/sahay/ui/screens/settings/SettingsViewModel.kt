@@ -35,6 +35,7 @@ data class SettingsState(
     val quietHoursWhisper: Boolean = true,
     val morningBriefingEnabled: Boolean = false,
     val role: String? = null,
+    val mood: String? = null,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
     val errorKey: String? = null,
@@ -59,6 +60,15 @@ val SAHAY_ROLES: List<Pair<String, String>> = listOf(
     "lawyer" to "Lawyer",
     "researcher" to "Researcher",
     "other" to "Other",
+)
+
+/** Mood = how the assistant TALKS. Kept in sync with MOOD_VALUES on backend. */
+val SAHAY_MOODS: List<Triple<String, String, String>> = listOf(
+    Triple("default", "Balanced", "Warm + efficient. The safe default."),
+    Triple("playful", "Playful", "Dry humour, Jarvis-style quips."),
+    Triple("warm", "Warm", "Encouraging, friendly, explicit."),
+    Triple("focused", "Focused", "Ruthless efficiency. No small talk."),
+    Triple("formal", "Formal", "Precise, respectful. 'Sir / madam'."),
 )
 
 @HiltViewModel
@@ -116,6 +126,7 @@ class SettingsViewModel @Inject constructor(
                     it.copy(
                         isLoading = false, me = me, usage = usage, grants = grants,
                         role = me.role,
+                        mood = me.mood ?: "default",
                     )
                 }
             }.onFailure { t ->
@@ -208,6 +219,17 @@ class SettingsViewModel @Inject constructor(
             runCatching { repo.updateMe(role = roleKey) }
                 .onFailure { t ->
                     _state.update { it.copy(role = previous, errorKey = t.message) }
+                }
+        }
+    }
+
+    fun setMood(moodKey: String) {
+        val previous = _state.value.mood
+        _state.update { it.copy(mood = moodKey) }
+        viewModelScope.launch {
+            runCatching { repo.updateMe(mood = moodKey) }
+                .onFailure { t ->
+                    _state.update { it.copy(mood = previous, errorKey = t.message) }
                 }
         }
     }

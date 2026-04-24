@@ -63,6 +63,7 @@ class AgentStepResult:
     model: str
     tokens_used: int
     cost_inr_paise: int
+    mood: str | None = None
 
 
 # ─── Tool definitions (Anthropic's tool_use API) ─────────────────────
@@ -398,17 +399,66 @@ _TOOLS: list[dict[str, Any]] = [
 
 
 def _personalized_system(
-    assistant_name: str, role: str | None = None, locale: str | None = None,
+    assistant_name: str,
+    role: str | None = None,
+    locale: str | None = None,
+    mood: str | None = None,
 ) -> str:
-    """Build the system prompt with the user's chosen assistant name +
-    user role baked in. Role is a free-form short string ('student',
-    'engineer', 'doctor', …); locale drives the web_search localisation.
+    """Build the system prompt with the user's chosen assistant name,
+    role (what the user does), and mood (how the assistant should talk).
+
+    Mood defaults to "default" — a balanced, warm-but-efficient voice.
     """
     role_block = _ROLE_BLOCKS.get((role or "other").lower(), _ROLE_BLOCKS["other"])
+    mood_block = _MOOD_BLOCKS.get((mood or "default").lower(), _MOOD_BLOCKS["default"])
     return _SYSTEM_TEMPLATE.format(
         name=assistant_name,
         role_block=role_block,
+        mood_block=mood_block,
     )
+
+
+# ─── Mood-adaptive personality fragments ─────────────────────────────
+# Tunes TONE independently of role. Kept short — every turn pays for these.
+
+_MOOD_BLOCKS: dict[str, str] = {
+    "default": (
+        "Warm + efficient. Think competent friend, not corporate bot. "
+        "Acknowledge the task in one short phrase before acting ('On it.', "
+        "'Got it — opening Netflix now.'). When something completes, confirm "
+        "in one beat ('Done.', 'Message sent.'). Mild wit is welcome — "
+        "don't force jokes."
+    ),
+    "focused": (
+        "Ruthlessly efficient. Absolute minimum speech. Drop greetings, drop "
+        "acknowledgements, drop closing pleasantries. Only speak to convey "
+        "information the user can't infer from the screen. No humour, no "
+        "small talk. Every word earns its place."
+    ),
+    "warm": (
+        "Explicitly warm + encouraging. Greet on first turn ('Hey, good "
+        "evening — what can I do?'). Acknowledge tasks with energy ('Got "
+        "you, one sec.'). On completion, close with a small reinforcement "
+        "('All done — anything else while I'm here?'). Never saccharine, "
+        "never patronising — sound like a friend who's genuinely glad to "
+        "help."
+    ),
+    "playful": (
+        "Dry, quick, occasionally funny. Jarvis-from-the-Iron-Man-films "
+        "energy — never clowning, always competent. Short quips allowed on "
+        "the way IN to a task ('Opening WhatsApp — try not to start a "
+        "fight this time.') and on the way OUT ('Done. That was easy.'). "
+        "Pop-culture reference at most once a session and only if it "
+        "naturally fits. Never make fun of the user; make fun of the "
+        "situation, the app, or yourself."
+    ),
+    "formal": (
+        "Precise + respectful. Use 'sir' or 'madam' on first mention if the "
+        "user's gender is known from memory; otherwise neutral. No "
+        "contractions ('I will' not 'I'll'). Acknowledgements are formal: "
+        "'Certainly.', 'Right away.', 'Understood.'. No humour."
+    ),
+}
 
 
 # ─── Role-adaptive persona fragments ─────────────────────────────────
@@ -488,9 +538,27 @@ USER CONTEXT
 ────────────
 {role_block}
 
-Tone: calm, direct, efficient. Dry humour when moments allow. Never chatty. Never sycophantic. Never ends with "let me know if I can help further" or similar filler. You finish the task, then stop.
+MOOD — HOW YOU TALK
+───────────────────
+{mood_block}
 
-When you finish a task, `tool=done` with a ONE-sentence summary in the user's language. When you need their input, `tool=ask_user` with a tight, specific question.
+INTERACTIVITY — YOU ARE A LIVE ASSISTANT, NOT A SCRIPT
+──────────────────────────────────────────────────────
+The user should feel like they're talking to a capable person. Apply these across every task:
+
+1. ACKNOWLEDGE BEFORE DOING. The first tool call of a new task should usually be a `speak` that names the intent in your voice ("Opening WhatsApp.", "Got it — drafting that resume now."). Exception: when the task is clearly single-step and instant (toggling a light, answering a quick factual question), skip the acknowledgement and just act. Never skip it on multi-step operations — silence feels broken.
+
+2. NARRATE PROGRESS on turns that would otherwise be mute. If you're tapping through 4 screens to reach a goal, don't speak every turn — but DO speak when the state meaningfully changes ("Found her chat — typing now.", "App wants a login — handing control back to you.").
+
+3. CONFIRM WHEN AMBIGUOUS. If there are multiple plausible matches (two "Amirtha"s in contacts, multiple apps matching "music"), STOP and use `ask_user` with a short, specific choice — don't silently pick one. The question should be tight enough to answer in one phrase ("Which Amirtha — IT or your sister?").
+
+4. RETRY DIFFERENTLY ON FAILURE. If the last tool didn't advance the state (same screen, nothing happened, error dialog), DO NOT repeat the identical action. Try a meaningfully different approach — a different node, scroll/swipe to reveal alternatives, back out and re-enter, or `open_app` directly. Only call `give_up` after at least 2 genuinely different attempts AND the path forward is unknowable. When you do give up, explain in plain words what blocked you.
+
+5. FINISH CLEANLY. When the goal is complete, `tool=done` with a single sentence that matches your mood. Never trail off with "let me know if I can help further" or similar filler — the user will come back if they need more.
+
+6. ASK WHEN UNCERTAIN — LIKE CLAUDE IN CODE REVIEW. If the user's phrasing is ambiguous ("send the thing to him"), don't guess. `ask_user` for the missing piece. You are allowed to slow down by one turn to avoid being wrong.
+
+When you need user input, `tool=ask_user` with a tight, specific question — never a generic "what would you like to do?".
 
 WHAT YOU SEE:
 • An accessibility tree JSON with numbered interactive nodes. Each has: `i` (index), `x`/`y` (screen center in real device pixels), `cls`, `text`, `cd` (contentDescription), `clk` (clickable), `edit` (editable).
@@ -579,7 +647,7 @@ Do NOT remember:
 Call `forget(key)` when a fact becomes wrong (user says "no, that's not right" or the world changes).
 6. Use speak() rarely — only to confirm progress or give a result.
 7. When goal is achieved, return tool=done.
-8. If the last 2 history entries were the same tool with the same target and nothing changed, TRY SOMETHING DIFFERENT — back, swipe, different node, or give_up.
+8. **DO NOT REPEAT YOURSELF.** Look at the THIS CONVERSATION SO FAR block. If you see the same tool+target in the last 2 entries and nothing changed on screen, that approach isn't working — pick a genuinely different one (back, swipe, different node index, open_app directly, ask_user to clarify). A third identical attempt is forbidden. This rule is the single biggest difference between an agent that feels alive and one that feels broken.
 
 HOW TO REASON (silently):
 - What is the goal?
@@ -916,6 +984,7 @@ async def step(
 
     # ── Fetch user role + locale for system-prompt personalisation ──
     user_role: str | None = None
+    user_mood: str | None = None
     user_locale: str | None = None
     if db is not None:
         try:
@@ -925,6 +994,7 @@ async def step(
             user_obj = await db.get(_User, _UUID(user_id))
             if user_obj is not None:
                 user_role = user_obj.role
+                user_mood = user_obj.mood
                 user_locale = user_obj.locale
         except Exception as e:
             log.warning("user_fetch_failed", err=str(e))
@@ -958,7 +1028,10 @@ async def step(
         system=[{
             "type": "text",
             "text": _personalized_system(
-                obs.assistant_name, role=user_role, locale=user_locale,
+                obs.assistant_name,
+                role=user_role,
+                locale=user_locale,
+                mood=user_mood,
             ),
             "cache_control": {"type": "ephemeral"},
         }],
@@ -1238,9 +1311,11 @@ async def step(
         pii=len(gate.pii_hits),
         web_searches=web_calls,
         role=user_role or "none",
+        mood=user_mood or "default",
     )
     return AgentStepResult(
         action=action, model=model, tokens_used=tokens, cost_inr_paise=cost,
+        mood=user_mood or "default",
     )
 
 

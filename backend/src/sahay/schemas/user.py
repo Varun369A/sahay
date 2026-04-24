@@ -16,6 +16,14 @@ ROLE_VALUES = {
     "researcher", "other",
 }
 
+# Mood = how the assistant TALKS. Separate axis from role.
+#   default  → balanced professional + warm (Claude-style).
+#   focused  → minimal chat, ruthlessly efficient. No jokes.
+#   warm     → encouraging, positive, explicit "got you" moments.
+#   playful  → dry humour, occasional pop-culture reference, Jarvis-ish.
+#   formal   → "sir / madam", precise, no contractions.
+MOOD_VALUES = {"default", "focused", "warm", "playful", "formal"}
+
 
 class MeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -25,6 +33,7 @@ class MeResponse(BaseModel):
     locale: str
     tier: str
     role: str | None = None
+    mood: str | None = None
     email_verified: bool
     created_at: datetime
     last_active_at: datetime | None
@@ -34,6 +43,7 @@ class UpdateMeRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
     locale: str | None = Field(default=None, min_length=2, max_length=8)
     role: str | None = Field(default=None, max_length=32)
+    mood: str | None = Field(default=None, max_length=16)
 
 
 class GrantAppRequest(BaseModel):
