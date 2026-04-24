@@ -37,9 +37,22 @@
 -dontwarn org.joda.time.**
 -keep class com.google.crypto.tink.** { *; }
 
-# Vosk — loaded via JNI, ProGuard can't see the references.
+# Vosk — loaded via JNA; native code looks up specific field IDs
+# (e.g. com.sun.jna.Pointer#peer). R8 mustn't rename OR remove any
+# JNA/Vosk member or the recognizer dies at Model() init with
+# UnsatisfiedLinkError: Can't obtain peer field ID for class com.sun.jna.Pointer.
 -keep class org.kaldi.** { *; }
 -keep class org.vosk.** { *; }
+-keep class com.sun.jna.** { *; }
+-keep class * extends com.sun.jna.** { *; }
+-keepclassmembers class * extends com.sun.jna.** { *; }
+-keepclasseswithmembers class * {
+    native <methods>;
+}
+# JNA drags in java.awt references for desktop JVMs — never reached
+# on Android, but R8 errors on them without a dontwarn.
+-dontwarn java.awt.**
+-dontwarn com.sun.jna.Native$AWT
 
 # reportlab / python-pptx (server-side only) — not needed here.
 
