@@ -25,6 +25,8 @@ class AgentObservation(BaseModel):
     """Snapshot of what the phone looks like right now."""
 
     goal: str = Field(min_length=1, max_length=2000, description="User's overall goal")
+    conversation_id: str = Field(min_length=1, max_length=64,
+                                 description="Stable id scoping turn history + PII map")
     app_package: str | None = Field(default=None, max_length=255,
                                     description="Current foreground package")
     screen_tree_summary: str = Field(default="", max_length=25_000,
@@ -33,9 +35,11 @@ class AgentObservation(BaseModel):
                                           description="PNG screenshot base64 (optional; used by vision)")
     step_index: int = Field(default=0, ge=0, le=40)
     history: list[dict[str, Any]] = Field(default_factory=list,
-                                          description="List of prior {tool, args, outcome}")
+                                          description="Prior turns — server augments with Redis-held memory")
     screen_width: int | None = None
     screen_height: int | None = None
+    assistant_name: str = Field(default="Sahay", max_length=40,
+                                description="User's chosen assistant name — used for personality")
 
 
 # ─── Tool calls Claude can issue ─────────────────────────────────────

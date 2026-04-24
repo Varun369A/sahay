@@ -146,6 +146,7 @@ data class ResolveResponse(
 @Serializable
 data class AgentObservation(
     val goal: String,
+    @SerialName("conversation_id") val conversationId: String,
     @SerialName("app_package") val appPackage: String? = null,
     @SerialName("screen_tree_summary") val screenTreeSummary: String = "",
     @SerialName("screenshot_base64") val screenshotBase64: String? = null,
@@ -153,6 +154,7 @@ data class AgentObservation(
     val history: List<kotlinx.serialization.json.JsonObject> = emptyList(),
     @SerialName("screen_width") val screenWidth: Int? = null,
     @SerialName("screen_height") val screenHeight: Int? = null,
+    @SerialName("assistant_name") val assistantName: String = "Sahay",
 )
 
 @Serializable

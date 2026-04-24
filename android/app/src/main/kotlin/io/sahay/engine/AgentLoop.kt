@@ -10,8 +10,10 @@ import io.sahay.data.api.AgentObservation
 import io.sahay.data.api.AgentStepRequest
 import io.sahay.data.api.AgentTool
 import io.sahay.data.api.SahayApi
+import io.sahay.data.secrets.UserPreferences
 import io.sahay.service.SahayAccessibilityService
 import io.sahay.voice.TtsClient
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.delay
@@ -41,6 +43,7 @@ class AgentLoop @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: SahayApi,
     private val tts: TtsClient,
+    private val prefs: UserPreferences,
 ) {
 
     data class Outcome(
@@ -50,12 +53,22 @@ class AgentLoop @Inject constructor(
         val summary: String? = null,
     )
 
-    /** Entry point. `goal` is the natural-language user utterance. */
+    /**
+     * Entry point. `goal` is the natural-language user utterance.
+     *
+     * One call = one conversation. A fresh UUID scopes the PII token map
+     * and turn memory on the backend so tasks can't leak state into each
+     * other. For multi-turn dialogues (future), the caller can reuse a
+     * conversation_id by calling a future overload.
+     */
     suspend fun run(goal: String): Outcome {
         val service = SahayAccessibilityService.instance()
             ?: return Outcome(false, 0, reason = "accessibility_service_not_running")
 
         tts.init()
+
+        val conversationId = UUID.randomUUID().toString()
+        val assistantName = prefs.snapshot().assistantName
 
         // Push Sahay off-screen so the agent doesn't see our own "Running:"
         // text and get confused into thinking the prior task is still going.
@@ -81,6 +94,7 @@ class AgentLoop @Inject constructor(
 
             val obs = AgentObservation(
                 goal = goal,
+                conversationId = conversationId,
                 appPackage = currentPkg,
                 screenTreeSummary = tree,
                 screenshotBase64 = shot?.base64Png,
@@ -88,6 +102,7 @@ class AgentLoop @Inject constructor(
                 history = history.toList(),
                 screenWidth = shot?.width ?: sw,
                 screenHeight = shot?.height ?: sh,
+                assistantName = assistantName,
             )
 
             // 2. Ask Claude

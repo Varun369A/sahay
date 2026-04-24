@@ -54,7 +54,7 @@ async def agent_step(
             detail=reason or "limit_reached",
         )
 
-    result = await agent_engine.step(obs)
+    result = await agent_engine.step(obs, user_id=str(user.id))
 
     # Meter the call.
     await usage_meter.increment_action(
