@@ -25,8 +25,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 object ScreenCapture {
 
     private const val TAG = "ScreenCapture"
-    private const val MAX_WIDTH = 1080
-    private const val PNG_QUALITY = 85
+    // 720px wide is the sweet spot: detail enough for Claude vision,
+    // small enough that JPEG 70 comes out ~80-150 KB per screen.
+    // PNG at 1080 was producing 2.6 MB screenshots and crashing the
+    // backend with 500 (oversized Claude Vision request).
+    private const val MAX_WIDTH = 720
+    private const val JPEG_QUALITY = 70
 
     /**
      * Grab the display. Returns null if API < 30, no display, or capture failed.
@@ -96,12 +100,12 @@ object ScreenCapture {
         } else bitmap
 
         val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, out)
+        scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
         val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
         val w = scaled.width
         val h = scaled.height
         scaled.recycle()
-        Log.i(TAG, "captured ${w}x${h} bytes=${b64.length}")
+        Log.i(TAG, "captured ${w}x${h} jpeg_bytes=${out.size()} b64=${b64.length}")
         return Capture(b64, w, h)
     }
 }
