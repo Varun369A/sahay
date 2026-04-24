@@ -70,57 +70,44 @@ class ActionRunner @Inject constructor(
             ?: return@withContext RunResult(success = false, reason = "executor_unavailable")
 
         val started = System.currentTimeMillis()
-        // Once target app has been the foreground at least once, we enforce
-        // that no other app steals focus mid-task (picture-in-picture,
-        // notifications, system hijacks). Before target first appears,
-        // the "launch" step is responsible for bringing it front.
-        var sawTargetFg = false
 
-        // CONFIRMATIONS REMOVED.
+        // FULL-AUTO MODE:
+        //  • Foreground hijack = re-launch the target app, don't abort
+        //  • Any failed step = log + continue to next (executor's internal
+        //    resolver already did 3 attempts with vision fallback)
+        //  • Only real aborts: payment-app blocklist, executor_unavailable
+        //
         // Safety still enforced by:
-        //   1. PaymentBlocklist (every step + every executor call)
-        //   2. The voice loop itself — user can stop with kill switch
-        //      (volume-down 3x) at any time
-        //   3. Backend tier limits + per-app allowlist
-        for (step in plan.steps) {
-            // Foreground hijack guard. Skip for launch steps — they bring the
-            // app to foreground themselves. For every other step, if an app
-            // OTHER THAN the target has stolen focus after we've seen target
-            // foreground at least once, abort cleanly.
+        //   • PaymentBlocklist (every step + every executor call)
+        //   • Kill switch (volume-down 3x)
+        //   • Per-app allowlist
+        for ((idx, step) in plan.steps.withIndex()) {
+            // Foreground recovery: if something else stole focus, relaunch
+            // the target app and retry this step instead of aborting.
             if (step.action != "launch") {
                 val currentFg = service.rootInActiveWindow?.packageName?.toString()
-                if (currentFg == appPackage) {
-                    sawTargetFg = true
-                } else if (sawTargetFg && currentFg != null && currentFg != appPackage) {
+                if (currentFg != null && currentFg != appPackage
+                    && currentFg != "com.android.systemui"
+                    && !currentFg.startsWith("com.android.inputmethod")) {
                     android.util.Log.w(
                         "ActionRunner",
-                        "fg_hijacked expected=$appPackage got=$currentFg step=${step.step}"
+                        "fg_recovery expected=$appPackage got=$currentFg step=${step.step} — relaunching"
                     )
-                    log(
-                        appPackage, intent, "failed",
-                        System.currentTimeMillis() - started,
-                        failureReason = "foreground_hijacked_by:$currentFg"
-                    )
-                    return@withContext RunResult(
-                        success = false,
-                        reason = "foreground_hijacked_by:$currentFg"
-                    )
+                    relaunchTarget(appPackage)
                 }
             }
 
             val outcome = executor.executeStep(step, appPackage)
             when (outcome) {
                 is PlaybookExecutor.StepOutcome.Failed -> {
-                    // Honor step.onFailure — conditional "if-on-this-screen" steps
-                    // (profile picker, back-from-playback) MUST not abort the task.
-                    val onFailure = step.onFailure?.lowercase() ?: "abort"
-                    if (onFailure in OPTIONAL_ON_FAILURE) {
-                        android.util.Log.i("ActionRunner",
-                            "step_${step.step}_skipped reason=${outcome.reason} policy=$onFailure")
-                        continue   // skip this step, move on to the next
-                    }
-                    log(appPackage, intent, "failed", System.currentTimeMillis() - started, failureReason = outcome.reason)
-                    return@withContext RunResult(success = false, reason = outcome.reason)
+                    android.util.Log.i(
+                        "ActionRunner",
+                        "step_${step.step}_failed reason=${outcome.reason} — continuing anyway"
+                    )
+                    // Full-auto: never give up. Move to the next step.
+                    // If this is the last step and it failed, we'll log it
+                    // after the loop ends; but we never abort mid-playbook.
+                    continue
                 }
                 PlaybookExecutor.StepOutcome.Aborted -> {
                     log(appPackage, intent, "aborted", System.currentTimeMillis() - started, userAborted = false, failureReason = "blocklist_or_kill_switch")
@@ -166,6 +153,27 @@ class ActionRunner @Inject constructor(
     }
 
     data class RunResult(val success: Boolean, val reason: String? = null)
+
+    private suspend fun relaunchTarget(appPackage: String) {
+        val service = SahayAccessibilityService.instance() ?: return
+        val intent = service.packageManager.getLaunchIntentForPackage(appPackage) ?: return
+        service.performGlobalAction(
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+        )
+        kotlinx.coroutines.delay(400)
+        intent.addFlags(
+            android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                or android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        )
+        service.startActivity(intent)
+        // Poll until target is FG again (up to 6s)
+        val deadline = System.currentTimeMillis() + 6_000
+        while (System.currentTimeMillis() < deadline) {
+            val fg = service.rootInActiveWindow?.packageName?.toString()
+            if (fg == appPackage) { kotlinx.coroutines.delay(500); return }
+            kotlinx.coroutines.delay(200)
+        }
+    }
 
     private companion object {
         /** Step.onFailure values that mean "step is conditional — skip on miss". */

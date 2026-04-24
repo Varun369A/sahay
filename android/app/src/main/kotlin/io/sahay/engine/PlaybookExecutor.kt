@@ -102,7 +102,9 @@ class PlaybookExecutor(
         appPackage: String,
         longPress: Boolean,
     ): StepOutcome {
-        val node = waitForNode(step) ?: askResolverFor(step, appPackage)
+        val node = waitForNode(step)
+            ?: askResolverFor(step, appPackage)
+            ?: anyLikelyCandidate(step)             // last-ditch: best-effort guess on screen
             ?: return StepOutcome.Failed("node_not_found")
         val action = if (longPress) AccessibilityNodeInfo.ACTION_LONG_CLICK
                      else AccessibilityNodeInfo.ACTION_CLICK
@@ -114,15 +116,74 @@ class PlaybookExecutor(
     }
 
     private suspend fun typeWithFallback(step: PlannedStepOut, appPackage: String): StepOutcome {
-        val node = waitForNode(step) ?: askResolverFor(step, appPackage)
+        val node = waitForNode(step)
+            ?: askResolverFor(step, appPackage)
+            ?: anyEditText()                        // last-ditch: any editable field on screen
             ?: return StepOutcome.Failed("node_not_found")
         val text = (step.params["text"] as? JsonPrimitive)?.contentOrNull
             ?: return StepOutcome.Failed("missing_text_param")
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
+        // Focus the field first, then set text.
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         return if (ok) StepOutcome.Success else StepOutcome.Failed("set_text_failed")
+    }
+
+    /** Last-ditch clickable finder — any clickable node matching the step's description keywords. */
+    private fun anyLikelyCandidate(step: PlannedStepOut): AccessibilityNodeInfo? {
+        val root = service.rootInActiveWindow ?: return null
+        val keywords = extractKeywords(step)
+        if (keywords.isEmpty()) return null
+
+        // Walk the tree, score each clickable node by keyword overlap.
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        var best: AccessibilityNodeInfo? = null
+        var bestScore = 0
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.isClickable || n.isFocusable) {
+                val text = (n.text?.toString() ?: "") + " " + (n.contentDescription?.toString() ?: "")
+                val score = keywords.count { text.contains(it, ignoreCase = true) }
+                if (score > bestScore) { best = n; bestScore = score }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let(stack::addLast)
+        }
+        if (best != null) Log.i(TAG, "anyLikelyCandidate picked score=$bestScore text='${best.text}'")
+        return best
+    }
+
+    /** Last-ditch text-input finder — first EditText-like node on screen. */
+    private fun anyEditText(): AccessibilityNodeInfo? {
+        val root = service.rootInActiveWindow ?: return null
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.isEditable ||
+                n.className?.toString()?.contains("EditText", ignoreCase = true) == true) {
+                Log.i(TAG, "anyEditText found cls=${n.className}")
+                return n
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let(stack::addLast)
+        }
+        return null
+    }
+
+    private fun extractKeywords(step: PlannedStepOut): List<String> {
+        val parts = mutableListOf<String>()
+        // From description — first few meaningful words.
+        step.description.split(" ", ",", "(", ")", "—")
+            .map { it.trim().lowercase() }
+            .filter { it.length > 2 && it !in STOPWORDS }
+            .take(3).let { parts.addAll(it) }
+        // From params — any {{x}} values already resolved to real strings.
+        for ((_, v) in step.params) {
+            (v as? JsonPrimitive)?.contentOrNull?.let { parts += it.lowercase() }
+        }
+        return parts.distinct()
     }
 
     private suspend fun verify(step: PlannedStepOut, appPackage: String): StepOutcome {
@@ -183,5 +244,10 @@ class PlaybookExecutor(
 
     private companion object {
         const val TAG = "PlaybookExec"
+        val STOPWORDS = setOf(
+            "tap", "type", "wait", "the", "on", "in", "to", "and", "for", "with",
+            "from", "into", "this", "that", "app", "screen", "page", "if", "else",
+            "first", "matching", "navigation", "bottom", "top", "icon",
+        )
     }
 }
