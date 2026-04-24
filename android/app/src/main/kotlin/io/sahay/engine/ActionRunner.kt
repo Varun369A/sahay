@@ -70,15 +70,43 @@ class ActionRunner @Inject constructor(
             ?: return@withContext RunResult(success = false, reason = "executor_unavailable")
 
         val started = System.currentTimeMillis()
+        // Once target app has been the foreground at least once, we enforce
+        // that no other app steals focus mid-task (picture-in-picture,
+        // notifications, system hijacks). Before target first appears,
+        // the "launch" step is responsible for bringing it front.
+        var sawTargetFg = false
+
         // CONFIRMATIONS REMOVED.
         // Safety still enforced by:
         //   1. PaymentBlocklist (every step + every executor call)
         //   2. The voice loop itself — user can stop with kill switch
         //      (volume-down 3x) at any time
         //   3. Backend tier limits + per-app allowlist
-        // step.confirmRequired is preserved on the protocol but no longer
-        // shown — turn back on per-app via Settings if user requests later.
         for (step in plan.steps) {
+            // Foreground hijack guard. Skip for launch steps — they bring the
+            // app to foreground themselves. For every other step, if an app
+            // OTHER THAN the target has stolen focus after we've seen target
+            // foreground at least once, abort cleanly.
+            if (step.action != "launch") {
+                val currentFg = service.rootInActiveWindow?.packageName?.toString()
+                if (currentFg == appPackage) {
+                    sawTargetFg = true
+                } else if (sawTargetFg && currentFg != null && currentFg != appPackage) {
+                    android.util.Log.w(
+                        "ActionRunner",
+                        "fg_hijacked expected=$appPackage got=$currentFg step=${step.step}"
+                    )
+                    log(
+                        appPackage, intent, "failed",
+                        System.currentTimeMillis() - started,
+                        failureReason = "foreground_hijacked_by:$currentFg"
+                    )
+                    return@withContext RunResult(
+                        success = false,
+                        reason = "foreground_hijacked_by:$currentFg"
+                    )
+                }
+            }
 
             val outcome = executor.executeStep(step, appPackage)
             when (outcome) {
