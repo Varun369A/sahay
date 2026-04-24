@@ -10,13 +10,14 @@ import io.sahay.data.api.AuthInterceptor
 import io.sahay.data.api.RefreshOnlyApi
 import io.sahay.data.api.SahayApi
 import io.sahay.data.secrets.SecureStore
+import javax.inject.Named
+import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
-import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -38,9 +39,13 @@ object NetworkModule {
                     else HttpLoggingInterceptor.Level.NONE
         }
 
+    // ─── Refresh-only OkHttp + Retrofit (used INSIDE AuthInterceptor) ───
+    // Tagged with @Named so Hilt distinguishes from the main client.
+
     @Provides
     @Singleton
-    fun provideRefreshOnlyClient(json: Json): OkHttpClient =
+    @Named("refresh")
+    fun provideRefreshOkHttpClient(): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
@@ -49,13 +54,18 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRefreshOnlyApi(client: OkHttpClient, json: Json): RefreshOnlyApi =
+    fun provideRefreshOnlyApi(
+        @Named("refresh") client: OkHttpClient,
+        json: Json,
+    ): RefreshOnlyApi =
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL.trimEnd('/') + "/")
             .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(RefreshOnlyApi::class.java)
+
+    // ─── Auth interceptor depends on the refresh client above ───────────
 
     @Provides
     @Singleton
@@ -65,9 +75,12 @@ object NetworkModule {
         json: Json,
     ): AuthInterceptor = AuthInterceptor(store, refreshApi, json)
 
+    // ─── Main OkHttp + Retrofit (carries auth + logging) ─────────────────
+
     @Provides
     @Singleton
-    fun provideOkHttpClient(
+    @Named("main")
+    fun provideMainOkHttpClient(
         auth: AuthInterceptor,
         logging: HttpLoggingInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
@@ -81,7 +94,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(client: OkHttpClient, json: Json): Retrofit =
+    fun provideRetrofit(
+        @Named("main") client: OkHttpClient,
+        json: Json,
+    ): Retrofit =
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL.trimEnd('/') + "/")
             .client(client)

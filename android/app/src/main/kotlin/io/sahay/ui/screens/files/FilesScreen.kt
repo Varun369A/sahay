@@ -58,9 +58,9 @@ fun FilesScreen() {
             }
         }
 
-        if (state.errorKey != null) {
+        state.errorKey?.let { err ->
             Spacer(Modifier.height(8.dp))
-            Text(state.errorKey, color = MaterialTheme.colorScheme.error)
+            Text(err, color = MaterialTheme.colorScheme.error)
         }
 
         Spacer(Modifier.height(16.dp))

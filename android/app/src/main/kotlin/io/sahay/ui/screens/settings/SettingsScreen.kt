@@ -147,8 +147,8 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
             Text("Log out")
         }
 
-        if (state.errorKey != null) {
-            Text(state.errorKey, color = MaterialTheme.colorScheme.error)
+        state.errorKey?.let { err ->
+            Text(err, color = MaterialTheme.colorScheme.error)
         }
     }
 

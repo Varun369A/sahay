@@ -97,9 +97,9 @@ fun HomeScreen() {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (state.errorKey != null) {
+        state.errorKey?.let { err ->
             Spacer(Modifier.height(16.dp))
-            Text(state.errorKey, color = MaterialTheme.colorScheme.error)
+            Text(err, color = MaterialTheme.colorScheme.error)
         }
         if (state.lastResult.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
