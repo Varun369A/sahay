@@ -52,6 +52,7 @@ def _to_domain(n: NotificationIn) -> Notification:
         category=n.category or "",
         posted_at=float(n.posted_at),
         is_ongoing=bool(n.is_ongoing),
+        replyable=bool(n.replyable),
     )
 
 
@@ -65,6 +66,7 @@ def _to_out(n: Notification) -> NotificationOut:
         category=n.category,
         posted_at=n.posted_at,
         is_ongoing=n.is_ongoing,
+        replyable=n.replyable,
     )
 
 

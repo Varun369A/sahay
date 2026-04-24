@@ -49,7 +49,9 @@ log = get_logger(__name__)
 class Notification:
     """One notification from the Android listener.
 
-    `key` is Android's StatusBarNotification.getKey() — used for dedup.
+    `key` is Android's StatusBarNotification.getKey() — used for dedup and,
+    for replyable notifications, as the handle the agent passes back to
+    invoke the RemoteInput reply action.
     """
 
     key: str
@@ -60,6 +62,7 @@ class Notification:
     category: str              # e.g. "msg", "email", "reminder" — Android's Notification.CATEGORY_*
     posted_at: float           # unix seconds
     is_ongoing: bool = False   # persistent notifications (music player, nav) — lower priority
+    replyable: bool = False    # has a RemoteInput reply action (WhatsApp, SMS, Gmail thread…)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -75,6 +78,7 @@ class Notification:
             category=str(d.get("category") or "")[:40],
             posted_at=float(d.get("posted_at") or time.time()),
             is_ongoing=bool(d.get("is_ongoing")),
+            replyable=bool(d.get("replyable")),
         )
 
 
@@ -213,15 +217,19 @@ def get_notification_store() -> NotificationStore:
 
 
 def format_for_prompt(
-    notifications: list[Notification], *, max_chars: int = 1_200,
+    notifications: list[Notification], *, max_chars: int = 1_400,
 ) -> str:
     """Render a compact block of notifications for Claude's context.
 
     Output example:
         RECENT NOTIFICATIONS (last 30min, newest first):
-          • [WhatsApp] Amirtha — "Meeting at 4pm?"
-          • [Gmail] Rakesh — "Re: Q2 numbers"
-          • [Clock] Timer finished
+          • [WhatsApp] Amirtha — "Meeting at 4pm?"    [replyable key=wa_123]
+          • [Gmail] Rakesh — "Re: Q2 numbers"         [replyable key=gm_9aa]
+          • [Clock] Timer finished                    [key=clk_7]
+
+    The `key=` is the Android SBN key — the agent passes it back to
+    `reply_to_notification(notification_key=…)` to fire a RemoteInput
+    reply, or uses it when the user references "the one from Amirtha".
     """
     if not notifications:
         return "(no recent notifications)"
@@ -232,7 +240,14 @@ def format_for_prompt(
         app = n.app_name or n.package.split(".")[-1]
         title = n.title or "(no title)"
         text = (n.text or "").replace("\n", " ")[:140]
-        line = f"  • [{app[:20]}] {title[:60]}" + (f" — \"{text}\"" if text else "")
+        tags = []
+        if n.replyable:
+            tags.append("replyable")
+        # Only a short key prefix makes it into the prompt — keeps tokens down
+        # while still letting the agent disambiguate between notifications.
+        tags.append(f"key={n.key[:24]}")
+        suffix = "  [" + ", ".join(tags) + "]"
+        line = f"  • [{app[:20]}] {title[:60]}" + (f" — \"{text}\"" if text else "") + suffix
         if used + len(line) + 1 > max_chars:
             lines.append("  …")
             break

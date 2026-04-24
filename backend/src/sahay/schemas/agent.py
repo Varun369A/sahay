@@ -67,6 +67,8 @@ class AgentTool(BaseModel):
         "remember",         # persist a fact about the user (long-term memory)
         "forget",           # delete a fact from long-term memory
         "create_document",  # create resume/report/presentation/letter (server-side)
+        "stage_reply",         # stage a notification reply + ask for confirmation (server-side)
+        "reply_to_notification",  # fire RemoteInput reply to a prior notification (client-side)
     ]
     # tap_node / type_in_node — the `i` from the tree nodes list
     node_index: int | None = Field(default=None, ge=0, le=500)
@@ -96,6 +98,12 @@ class AgentTool(BaseModel):
                              description="Document kind: resume|report|presentation|letter|plain")
     prompt: str | None = Field(default=None, max_length=4000,
                                description="Doc brief — what the content should be.")
+    # stage_reply / reply_to_notification
+    notification_key: str | None = Field(default=None, max_length=200,
+                                         description="Android SBN key prefix of the "
+                                                     "notification to reply to")
+    contact: str | None = Field(default=None, max_length=120,
+                                description="Human-readable name of the reply target")
     # Metadata
     reasoning: str | None = Field(default=None, max_length=500,
                                    description="Claude's 1-line rationale")

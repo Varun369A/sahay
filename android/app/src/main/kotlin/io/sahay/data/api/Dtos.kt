@@ -173,6 +173,9 @@ data class AgentTool(
     @SerialName("duration_ms") val durationMs: Int? = null,
     @SerialName("app_package") val appPackage: String? = null,
     val message: String? = null,
+    // reply_to_notification
+    @SerialName("notification_key") val notificationKey: String? = null,
+    val contact: String? = null,
     val reasoning: String? = null,
     val confidence: Double = 0.5,
 )
@@ -310,6 +313,7 @@ data class NotificationIn(
     val category: String? = null,
     @SerialName("posted_at") val postedAt: Double,
     @SerialName("is_ongoing") val isOngoing: Boolean = false,
+    val replyable: Boolean = false,
 )
 
 @Serializable
@@ -328,4 +332,5 @@ data class NotificationOut(
     val category: String,
     @SerialName("posted_at") val postedAt: Double,
     @SerialName("is_ongoing") val isOngoing: Boolean,
+    val replyable: Boolean = false,
 )

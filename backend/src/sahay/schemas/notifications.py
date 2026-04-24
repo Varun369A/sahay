@@ -32,6 +32,11 @@ class NotificationIn(BaseModel):
     )
     is_ongoing: bool = Field(default=False,
                              description="Persistent notifications (music, nav) — deprioritised")
+    replyable: bool = Field(
+        default=False,
+        description="True when the source notification carries a RemoteInput "
+                    "action the Sahay agent can invoke without opening the app.",
+    )
 
 
 class NotificationIngestRequest(BaseModel):
@@ -56,3 +61,4 @@ class NotificationOut(BaseModel):
     category: str
     posted_at: float
     is_ongoing: bool
+    replyable: bool = False

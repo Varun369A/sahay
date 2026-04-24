@@ -62,6 +62,10 @@ class SahayNotificationListenerService : NotificationListenerService() {
         // Intentionally NOT replaying getActiveNotifications() — shipping
         // pre-grant history off-device is a consent violation.
 
+        // Publish ourselves as the live listener so NotificationReplyDispatcher
+        // can reach active SBNs when the agent asks to reply.
+        instance = this
+
         // Prime TTS + refresh the important-contacts cache so proactive
         // announcements know who's allowed to break through Quiet Hours.
         tts.init()
@@ -70,11 +74,13 @@ class SahayNotificationListenerService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        if (instance === this) instance = null
         pending.clear()
         flushJob?.cancel()
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         super.onDestroy()
         scope.cancel()
     }
@@ -175,7 +181,17 @@ class SahayNotificationListenerService : NotificationListenerService() {
             postedAt = sbn.postTime / 1000.0,
             isOngoing = (sbn.notification?.flags ?: 0) and
                 Notification.FLAG_ONGOING_EVENT != 0,
+            replyable = hasReplyAction(sbn),
         )
+    }
+
+    /** True iff the notification carries a RemoteInput we could invoke. */
+    private fun hasReplyAction(sbn: StatusBarNotification): Boolean {
+        val actions = sbn.notification?.actions ?: return false
+        return actions.any { action ->
+            val inputs = action.remoteInputs
+            inputs != null && inputs.isNotEmpty()
+        }
     }
 
     private fun scheduleFlush() {
@@ -205,8 +221,19 @@ class SahayNotificationListenerService : NotificationListenerService() {
         }
     }
 
-    private companion object {
-        const val FLUSH_DEBOUNCE_MS = 1_500L
-        const val MAX_BATCH = 25
+    companion object {
+        private const val FLUSH_DEBOUNCE_MS = 1_500L
+        private const val MAX_BATCH = 25
+
+        /**
+         * Live handle to the connected listener, used by
+         * [io.sahay.service.NotificationReplyDispatcher] to reach active
+         * SBNs when the agent asks to fire a RemoteInput reply. Null when
+         * the user hasn't granted notification-listener access or the OS
+         * has rebound the service.
+         */
+        @Volatile
+        var instance: SahayNotificationListenerService? = null
+            private set
     }
 }

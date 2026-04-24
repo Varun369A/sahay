@@ -141,6 +141,7 @@ class ConversationMemory:
         pipe.delete(self._key(user_id, conversation_id))
         pipe.delete(self._meta(user_id, conversation_id))
         pipe.delete(self._plan_key(user_id, conversation_id))
+        pipe.delete(self._draft_key(user_id, conversation_id))
         await pipe.execute()
 
     # ─── Plan persistence (plan-first execution) ─────────────────────
@@ -172,6 +173,53 @@ class ConversationMemory:
             return json.loads(raw)
         except json.JSONDecodeError:
             return None
+
+    # ─── Pending reply draft (Round 4 — voice reply confirmation) ───
+    # A single draft per conversation. The user says "reply …" → agent
+    # calls stage_reply which stores here; next turn the agent emits
+    # reply_to_notification using the values we hand back. If the user
+    # abandons or replaces the draft, we just overwrite — there's only
+    # one pending reply at a time per conversation.
+
+    DRAFT_FMT = "convmem_draft:{user_id}:{conversation_id}"
+
+    def _draft_key(self, user_id: str, conversation_id: str) -> str:
+        return self.DRAFT_FMT.format(user_id=user_id, conversation_id=conversation_id)
+
+    async def set_draft_reply(
+        self, user_id: str, conversation_id: str,
+        *,
+        notification_key: str, contact: str, text: str,
+    ) -> None:
+        r = self._redis or get_redis()
+        await r.set(
+            self._draft_key(user_id, conversation_id),
+            json.dumps({
+                "notification_key": notification_key,
+                "contact": contact,
+                "text": text,
+                "ts": time.time(),
+            }),
+            ex=self.TTL_SECONDS,
+        )
+
+    async def get_draft_reply(
+        self, user_id: str, conversation_id: str,
+    ) -> dict[str, Any] | None:
+        r = self._redis or get_redis()
+        raw = await r.get(self._draft_key(user_id, conversation_id))
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+    async def clear_draft_reply(
+        self, user_id: str, conversation_id: str,
+    ) -> None:
+        r = self._redis or get_redis()
+        await r.delete(self._draft_key(user_id, conversation_id))
 
     async def active_count(self, user_id: str) -> int:
         """Rough count of active conversations for a user (Redis scan)."""

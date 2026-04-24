@@ -185,11 +185,48 @@ class AgentLoop @Inject constructor(
                 tts.speak(action.message ?: "")
                 ExecResult("ok", settleMs = 0)
             }
+            "reply_to_notification" -> replyToNotification(service, action)
             "ask_user" -> ExecResult("ask_user", settleMs = 0)
             "done" -> ExecResult("done", settleMs = 0)
             "give_up" -> ExecResult("give_up", settleMs = 0)
             else -> ExecResult("unknown_tool:${action.tool}", settleMs = 0)
         }
+    }
+
+    /**
+     * Fire the RemoteInput reply action stored on a still-active notification.
+     * The agent has already walked the user through a confirm-then-send flow
+     * server-side, so by the time we get here the text is final.
+     *
+     * We speak a short confirmation so the user gets audible feedback the
+     * message left the phone — matches the "slow, steady, human tone" the
+     * rest of the proactive flow uses.
+     */
+    private suspend fun replyToNotification(
+        service: AccessibilityService, action: AgentTool,
+    ): ExecResult {
+        val key = action.notificationKey.orEmpty()
+        val text = action.text.orEmpty()
+        if (key.isBlank() || text.isBlank()) return ExecResult("missing_reply_args")
+
+        val outcome = io.sahay.service.NotificationReplyDispatcher.dispatch(
+            service, keyPrefix = key, text = text,
+        )
+        val contact = action.contact.orEmpty()
+        val spoken = when (outcome) {
+            "ok" -> if (contact.isNotBlank()) "Sent to $contact." else "Reply sent."
+            "notification_not_found" ->
+                "I couldn't find that conversation any more — it may have been cleared."
+            "payment_app_blocked" ->
+                "I don't send messages into payment apps."
+            "listener_not_running" ->
+                "Notification access isn't active — enable it in Settings."
+            "no_reply_action", "no_actions", "no_remote_input" ->
+                "That app doesn't support inline replies."
+            else -> "I couldn't send that reply."
+        }
+        tts.speak(spoken)
+        return ExecResult(outcome, settleMs = 0)
     }
 
     private suspend fun tapIndexedNode(
