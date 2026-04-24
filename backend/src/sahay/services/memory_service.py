@@ -182,6 +182,57 @@ async def list_all(
     return [_to_dc(r) for r in rows]
 
 
+async def bump_importance(
+    db: AsyncSession, *, user_id: UUID, key: str, delta: int = 1,
+) -> int | None:
+    """Raise (or lower) the importance of a memory by `delta`, clamped 1..10.
+
+    Returns the new importance, or None if no such memory exists.
+
+    Used by the learned-priority loop: after a quick successful reply to a
+    notification, we bump the sender's importance so they break through
+    Quiet Hours next time.
+    """
+    stmt = select(UserMemory).where(
+        UserMemory.user_id == user_id,
+        UserMemory.key == key,
+    )
+    row = (await db.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    new_imp = max(1, min(10, int(row.importance) + int(delta)))
+    if new_imp == row.importance:
+        return row.importance
+    row.importance = new_imp
+    await db.flush()
+    return new_imp
+
+
+async def find_contact_memory_by_name(
+    db: AsyncSession, *, user_id: UUID, name_hint: str,
+) -> UserMemory | None:
+    """Best-effort lookup of a contact:* memory whose value mentions the
+    given first name. Returns the most-important match if several hit.
+    """
+    hint = (name_hint or "").strip().lower()
+    if len(hint) < 2:
+        return None
+    stmt = (
+        select(UserMemory)
+        .where(
+            UserMemory.user_id == user_id,
+            UserMemory.key.startswith("contact:"),
+        )
+        .order_by(UserMemory.importance.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    for r in rows:
+        haystack = f"{r.key} {r.value}".lower()
+        if hint in haystack:
+            return r
+    return None
+
+
 async def list_important_contacts(
     db: AsyncSession, *, user_id: UUID, min_importance: int = 8, limit: int = 50,
 ) -> list[Memory]:

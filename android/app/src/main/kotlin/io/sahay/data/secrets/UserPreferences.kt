@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -47,6 +48,10 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
 
         // Whisper mode: during Quiet Hours lower TTS volume rather than mute.
         val QuietHoursWhisper = booleanPreferencesKey("quiet_hours_whisper")
+
+        // Morning briefing — spoken on first unlock of the day.
+        val MorningBriefingEnabled = booleanPreferencesKey("morning_briefing_enabled")
+        val LastBriefingAtMs = longPreferencesKey("last_briefing_at_ms")
     }
 
     val assistantName: Flow<String> = context.dataStore.data.map {
@@ -80,6 +85,12 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     val quietHoursWhisper: Flow<Boolean> = context.dataStore.data.map {
         it[Keys.QuietHoursWhisper] ?: true               // whisper > mute by default
     }
+    val morningBriefingEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.MorningBriefingEnabled] ?: false         // off until user opts in
+    }
+    val lastBriefingAtMs: Flow<Long> = context.dataStore.data.map {
+        it[Keys.LastBriefingAtMs] ?: 0L
+    }
 
     suspend fun setAssistantName(value: String) = context.dataStore.edit {
         it[Keys.AssistantName] = value.ifBlank { "Sahay" }
@@ -108,6 +119,12 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     suspend fun setQuietHoursWhisper(value: Boolean) = context.dataStore.edit {
         it[Keys.QuietHoursWhisper] = value
     }
+    suspend fun setMorningBriefingEnabled(value: Boolean) = context.dataStore.edit {
+        it[Keys.MorningBriefingEnabled] = value
+    }
+    suspend fun setLastBriefingAtMs(value: Long) = context.dataStore.edit {
+        it[Keys.LastBriefingAtMs] = value
+    }
 
     suspend fun snapshot(): Snapshot {
         val data = context.dataStore.data.first()
@@ -121,6 +138,8 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
             quietHoursEndMin = data[Keys.QuietHoursEndMin] ?: 7 * 60,
             dndImportanceThreshold = data[Keys.DndImportanceThreshold] ?: 8,
             quietHoursWhisper = data[Keys.QuietHoursWhisper] ?: true,
+            morningBriefingEnabled = data[Keys.MorningBriefingEnabled] ?: false,
+            lastBriefingAtMs = data[Keys.LastBriefingAtMs] ?: 0L,
         )
     }
 
@@ -134,5 +153,7 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val quietHoursEndMin: Int = 7 * 60,
         val dndImportanceThreshold: Int = 8,
         val quietHoursWhisper: Boolean = true,
+        val morningBriefingEnabled: Boolean = false,
+        val lastBriefingAtMs: Long = 0L,
     )
 }

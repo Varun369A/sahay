@@ -25,8 +25,8 @@ from sahay import __version__
 from sahay.config import get_settings
 from sahay.db.session import dispose_engine
 from sahay.routers import (
-    actions, agent, auth, documents, files, health, memory, notifications,
-    playbooks, users,
+    actions, agent, auth, briefing, documents, files, health, memory,
+    notifications, playbooks, users,
 )
 from sahay.util.logging import configure_logging, get_logger
 
@@ -123,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(memory.router)
     app.include_router(notifications.router)
     app.include_router(documents.router)
+    app.include_router(briefing.router)
 
     # Global error handler — never leak stack traces in production.
     @app.exception_handler(Exception)

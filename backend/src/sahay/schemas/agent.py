@@ -69,6 +69,7 @@ class AgentTool(BaseModel):
         "create_document",  # create resume/report/presentation/letter (server-side)
         "stage_reply",         # stage a notification reply + ask for confirmation (server-side)
         "reply_to_notification",  # fire RemoteInput reply to a prior notification (client-side)
+        "note_followup",    # persist an open-loop commitment (server-side)
     ]
     # tap_node / type_in_node — the `i` from the tree nodes list
     node_index: int | None = Field(default=None, ge=0, le=500)

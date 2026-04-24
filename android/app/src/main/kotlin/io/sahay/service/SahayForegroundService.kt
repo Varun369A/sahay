@@ -3,16 +3,21 @@ package io.sahay.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import io.sahay.App
 import io.sahay.MainActivity
 import io.sahay.R
 import io.sahay.engine.ActionRunner
+import io.sahay.engine.MorningBriefing
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,13 +39,33 @@ class SahayForegroundService : Service() {
 
     @Inject lateinit var runner: ActionRunner
     @Inject lateinit var agentLoop: io.sahay.engine.AgentLoop
+    @Inject lateinit var briefing: MorningBriefing
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var currentJob: Job? = null
 
+    /**
+     * Fires on every screen-unlock. We forward to the MorningBriefing
+     * gate which handles day-window / debounce / enable-flag checks.
+     * Registered dynamically because Android 8+ blocks implicit broadcasts
+     * in the manifest — but works fine from a running foreground service.
+     */
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_USER_PRESENT) return
+            scope.launch { briefing.maybeAnnounce() }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         startForegroundCompat()
+        ContextCompat.registerReceiver(
+            this,
+            unlockReceiver,
+            IntentFilter(Intent.ACTION_USER_PRESENT),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -72,6 +97,7 @@ class SahayForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(unlockReceiver) }
         scope.cancel()
         super.onDestroy()
     }

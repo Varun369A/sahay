@@ -23,6 +23,9 @@
     <string name="settings_quiet_whisper">Whisper during Quiet Hours</string>
     <string name="settings_quiet_whisper_body">Speak at low volume instead of being silent.</string>
 
+    <string name="settings_morning_briefing_title">Morning briefing</string>
+    <string name="settings_morning_briefing_body">On your first unlock between 5 and 11 AM, Sahay speaks a short briefing — overnight messages, missed calls, open follow-ups.</string>
+
     <!-- Role picker -->
     <string name="settings_role_title">What do you do?</string>
     <string name="settings_role_body">Sahay tailors its tone, examples, and document templates to your role. Change anytime.</string>

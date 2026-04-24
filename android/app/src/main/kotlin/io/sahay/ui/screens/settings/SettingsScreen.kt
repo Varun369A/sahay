@@ -282,6 +282,27 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
                                 onCheckedChange = vm::setQuietHoursWhisper,
                             )
                         }
+
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.settings_morning_briefing_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                Text(
+                                    stringResource(R.string.settings_morning_briefing_body),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = state.morningBriefingEnabled,
+                                onCheckedChange = vm::setMorningBriefingEnabled,
+                            )
+                        }
                     }
                 }
             }

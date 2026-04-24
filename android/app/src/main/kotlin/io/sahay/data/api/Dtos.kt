@@ -268,6 +268,17 @@ data class GenerateImageRequest(
 @Serializable
 data class EditImageRequest(val prompt: String)
 
+// ─── Morning briefing ────────────────────────────────────────────────
+
+@Serializable
+data class MorningBriefingResponse(
+    val text: String,
+    val model: String,
+    @SerialName("tokens_used") val tokensUsed: Int = 0,
+    @SerialName("cost_inr_paise") val costInrPaise: Int = 0,
+    @SerialName("web_searches") val webSearches: Int = 0,
+)
+
 // ─── Documents (agent-generated resume / report / PPT / letter) ─────
 
 @Serializable

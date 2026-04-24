@@ -82,6 +82,10 @@ interface SahayApi {
     @DELETE("/v1/files/{id}")
     suspend fun deleteFile(@Path("id") id: String)
 
+    // ─── Morning briefing ─────────────────────────────────────────────
+    @GET("/v1/agent/morning-briefing")
+    suspend fun morningBriefing(): MorningBriefingResponse
+
     // ─── Documents ───────────────────────────────────────────────────
     @POST("/v1/documents")
     suspend fun createDocument(

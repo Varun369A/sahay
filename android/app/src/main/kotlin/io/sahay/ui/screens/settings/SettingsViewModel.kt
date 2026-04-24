@@ -33,6 +33,7 @@ data class SettingsState(
     val quietHoursEndMin: Int = 7 * 60,
     val dndImportanceThreshold: Int = 8,
     val quietHoursWhisper: Boolean = true,
+    val morningBriefingEnabled: Boolean = false,
     val role: String? = null,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
@@ -86,6 +87,7 @@ class SettingsViewModel @Inject constructor(
                     quietHoursEndMin = snap.quietHoursEndMin,
                     dndImportanceThreshold = snap.dndImportanceThreshold,
                     quietHoursWhisper = snap.quietHoursWhisper,
+                    morningBriefingEnabled = snap.morningBriefingEnabled,
                 )
             }
         }
@@ -190,6 +192,11 @@ class SettingsViewModel @Inject constructor(
     fun setQuietHoursWhisper(value: Boolean) {
         _state.update { it.copy(quietHoursWhisper = value) }
         viewModelScope.launch { prefs.setQuietHoursWhisper(value) }
+    }
+
+    fun setMorningBriefingEnabled(value: Boolean) {
+        _state.update { it.copy(morningBriefingEnabled = value) }
+        viewModelScope.launch { prefs.setMorningBriefingEnabled(value) }
     }
 
     fun setRole(roleKey: String) {
