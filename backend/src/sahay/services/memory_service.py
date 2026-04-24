@@ -182,6 +182,30 @@ async def list_all(
     return [_to_dc(r) for r in rows]
 
 
+async def list_important_contacts(
+    db: AsyncSession, *, user_id: UUID, min_importance: int = 8, limit: int = 50,
+) -> list[Memory]:
+    """Contacts with importance ≥ threshold — fed to the Android listener so it
+    can decide which notifications break through Quiet Hours.
+
+    Pulls:
+      • category='people' memories whose value/key mentions a person
+      • any memory with importance >= min_importance and key prefix 'contact:'
+    """
+    stmt = (
+        select(UserMemory)
+        .where(
+            UserMemory.user_id == user_id,
+            UserMemory.importance >= min_importance,
+            UserMemory.category.in_(("people", "work")),
+        )
+        .order_by(UserMemory.importance.desc(), UserMemory.last_accessed_at.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [_to_dc(r) for r in rows]
+
+
 # ─── Retrieval for agent system prompt ───────────────────────────────
 
 

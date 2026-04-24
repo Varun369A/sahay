@@ -263,6 +263,18 @@ data class GenerateImageRequest(
 @Serializable
 data class EditImageRequest(val prompt: String)
 
+// ─── Long-term memory ────────────────────────────────────────────────
+
+@Serializable
+data class MemoryOut(
+    val key: String,
+    val value: String,
+    val category: String,
+    val importance: Int,
+    @SerialName("last_accessed_at") val lastAccessedAt: String,
+    val source: String,
+)
+
 // ─── Notifications (listener → backend) ──────────────────────────────
 
 @Serializable

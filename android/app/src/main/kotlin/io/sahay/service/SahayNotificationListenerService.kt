@@ -7,8 +7,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.sahay.data.api.NotificationIn
 import io.sahay.data.api.NotificationIngestRequest
 import io.sahay.data.api.SahayApi
+import io.sahay.data.repository.ImportantContactsRepository
 import io.sahay.data.secrets.UserPreferences
+import io.sahay.engine.NotificationHumanizer
 import io.sahay.engine.PaymentBlocklist
+import io.sahay.engine.QuietHours
+import io.sahay.voice.TtsClient
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +49,8 @@ class SahayNotificationListenerService : NotificationListenerService() {
 
     @Inject lateinit var api: SahayApi
     @Inject lateinit var prefs: UserPreferences
+    @Inject lateinit var contacts: ImportantContactsRepository
+    @Inject lateinit var tts: TtsClient
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pending = ConcurrentLinkedQueue<NotificationIn>()
@@ -55,6 +61,11 @@ class SahayNotificationListenerService : NotificationListenerService() {
         super.onListenerConnected()
         // Intentionally NOT replaying getActiveNotifications() — shipping
         // pre-grant history off-device is a consent violation.
+
+        // Prime TTS + refresh the important-contacts cache so proactive
+        // announcements know who's allowed to break through Quiet Hours.
+        tts.init()
+        scope.launch { contacts.refreshIfStale() }
     }
 
     override fun onListenerDisconnected() {
@@ -74,16 +85,46 @@ class SahayNotificationListenerService : NotificationListenerService() {
     }
 
     private suspend fun handlePosted(sbn: StatusBarNotification) {
-        // Fail-closed: if the toggle is off, do nothing.
-        val enabled = runCatching { prefs.snapshot().notificationsEnabled }
-            .getOrDefault(false)
-        if (!enabled) return
+        val snap = runCatching { prefs.snapshot() }.getOrNull() ?: return
+        // Fail-closed: listener toggle off → do nothing at all (no ingest, no announce).
+        if (!snap.notificationsEnabled) return
 
         if (!shouldForward(sbn)) return
 
         val mapped = mapToDto(sbn) ?: return
         pending.add(mapped)
         scheduleFlush()
+
+        // Proactive announcement (Quiet Hours aware). Runs independent of
+        // the ingest queue so a network hiccup never silences a critical
+        // notification. Errors are swallowed — announce is best-effort.
+        if (snap.proactiveAnnounceEnabled) {
+            runCatching { maybeAnnounce(mapped, snap) }
+        }
+    }
+
+    private fun maybeAnnounce(
+        notif: NotificationIn,
+        snap: UserPreferences.Snapshot,
+    ) {
+        val senderImportance = contacts.importanceForSender(notif.title.orEmpty())
+        val inQuiet = QuietHours.isActiveNow(snap.quietHoursStartMin, snap.quietHoursEndMin)
+        val ok = QuietHours.shouldAnnounce(
+            proactiveEnabled = snap.proactiveAnnounceEnabled,
+            inQuietHours = inQuiet,
+            senderImportance = senderImportance,
+            dndThreshold = snap.dndImportanceThreshold,
+        )
+        if (!ok) return
+
+        val sentence = NotificationHumanizer.humanize(
+            appPackage = notif.`package`,
+            appName = notif.appName.orEmpty(),
+            title = notif.title.orEmpty(),
+            text = notif.text.orEmpty(),
+            category = notif.category.orEmpty(),
+        )
+        tts.announce(sentence, whisper = inQuiet && snap.quietHoursWhisper)
     }
 
     private fun shouldForward(sbn: StatusBarNotification): Boolean {

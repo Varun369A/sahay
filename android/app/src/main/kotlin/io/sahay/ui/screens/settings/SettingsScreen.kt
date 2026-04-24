@@ -1,5 +1,6 @@
 package io.sahay.ui.screens.settings
 
+import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Slider
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -37,9 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.sahay.R
+import io.sahay.engine.QuietHours
 
 @Composable
 fun SettingsScreen(onLoggedOut: () -> Unit) {
@@ -153,6 +157,104 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
             }
         }
 
+        // ─── Proactive announcements + Quiet Hours ──────────────────
+        if (state.notificationListenerGranted && state.notificationsEnabled) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.settings_proactive_title),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                stringResource(R.string.settings_proactive_body),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.proactiveAnnounceEnabled,
+                            onCheckedChange = vm::setProactiveAnnounceEnabled,
+                        )
+                    }
+
+                    if (state.proactiveAnnounceEnabled) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.settings_quiet_hours_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(R.string.settings_quiet_hours_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            TimePickerButton(
+                                label = stringResource(R.string.settings_quiet_hours_start),
+                                totalMinutes = state.quietHoursStartMin,
+                                onPicked = vm::setQuietHoursStart,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TimePickerButton(
+                                label = stringResource(R.string.settings_quiet_hours_end),
+                                totalMinutes = state.quietHoursEndMin,
+                                onPicked = vm::setQuietHoursEnd,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.settings_dnd_threshold),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            stringResource(
+                                R.string.settings_dnd_threshold_body,
+                                state.dndImportanceThreshold,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = state.dndImportanceThreshold.toFloat(),
+                            onValueChange = { vm.setDndImportanceThreshold(it.toInt()) },
+                            valueRange = 5f..10f,
+                            steps = 4,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.settings_quiet_whisper),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                Text(
+                                    stringResource(R.string.settings_quiet_whisper_body),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = state.quietHoursWhisper,
+                                onCheckedChange = vm::setQuietHoursWhisper,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // ─── Account ────────────────────────────────────────────────
         state.me?.let { me ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -261,5 +363,35 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun TimePickerButton(
+    label: String,
+    totalMinutes: Int,
+    onPicked: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = {
+            val h = (totalMinutes / 60).coerceIn(0, 23)
+            val m = (totalMinutes % 60).coerceIn(0, 59)
+            TimePickerDialog(
+                context,
+                { _, newH, newM -> onPicked(newH * 60 + newM) },
+                h, m, true,
+            ).show()
+        },
+        modifier = modifier,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text(
+                QuietHours.formatHm(totalMinutes),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
     }
 }

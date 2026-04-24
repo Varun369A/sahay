@@ -82,6 +82,12 @@ interface SahayApi {
     @DELETE("/v1/files/{id}")
     suspend fun deleteFile(@Path("id") id: String)
 
+    // ─── Long-term memory ────────────────────────────────────────────
+    @GET("/v1/memory/important-contacts")
+    suspend fun importantContacts(
+        @Query("min_importance") minImportance: Int = 8,
+    ): List<MemoryOut>
+
     // ─── Notifications (listener) ────────────────────────────────────
     @POST("/v1/notifications/ingest")
     suspend fun ingestNotifications(

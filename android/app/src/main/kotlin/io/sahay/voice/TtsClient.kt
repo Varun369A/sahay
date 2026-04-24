@@ -1,6 +1,7 @@
 package io.sahay.voice
 
 import android.content.Context
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -14,11 +15,19 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Simple wrapper around Android's built-in TextToSpeech.
- * Free, on-device on most modern phones, no API key.
+ * Wrapper around Android's built-in TextToSpeech tuned for a calm, human
+ * narrator tone — lower pitch, slightly slower rate than default. The
+ * default Android voice is flat and robotic; these values soften it.
  *
- * For premium voices (Pro tier) we can swap in ElevenLabs later;
- * the public API here stays the same.
+ * Provides two surfaces:
+ *   speak()    — suspending, waits until playback ends. Used by the agent
+ *                `speak` tool where the loop cares when the utterance finishes.
+ *   announce() — fire-and-forget, used by the notification listener for
+ *                proactive announcements. Supports whisper mode (lower
+ *                volume for Quiet Hours).
+ *
+ * For premium voices (Pro tier) we can swap in ElevenLabs later — the public
+ * API here stays the same.
  */
 @Singleton
 class TtsClient @Inject constructor(@ApplicationContext private val context: Context) {
@@ -31,8 +40,10 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
         engine = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 engine?.language = locale
-                engine?.setPitch(1.0f)
-                engine?.setSpeechRate(1.0f)
+                // Lower pitch = less nasal. Slower rate = perceptible pauses
+                // between phrases. Tuned by ear on Google TTS and Samsung TTS.
+                engine?.setPitch(PITCH_HUMAN)
+                engine?.setSpeechRate(RATE_HUMAN)
                 ready.set(true)
                 Log.i(TAG, "tts_ready locale=$locale")
             } else {
@@ -70,6 +81,29 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
         return completed ?: false
     }
 
+    /**
+     * Fire-and-forget announcement. Used by the notification listener when
+     * a high-priority message arrives. Returns immediately — we don't want
+     * to block the listener's coroutine on full playback.
+     *
+     * @param whisper When true, speak at reduced volume (~30%) — intended
+     *                for Quiet Hours where the user still wants to hear
+     *                important messages but not be startled.
+     */
+    fun announce(text: String, whisper: Boolean = false): Boolean {
+        if (text.isBlank()) return false
+        val e = engine ?: run { init(); return false }
+        if (!ready.get()) return false
+
+        val params = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, if (whisper) VOLUME_WHISPER else VOLUME_NORMAL)
+            putFloat(TextToSpeech.Engine.KEY_PARAM_PAN, 0f)
+        }
+        val id = "announce_${System.currentTimeMillis()}"
+        val rc = e.speak(text, TextToSpeech.QUEUE_ADD, params, id)
+        return rc == TextToSpeech.SUCCESS
+    }
+
     fun shutdown() {
         engine?.stop()
         engine?.shutdown()
@@ -77,5 +111,14 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
         ready.set(false)
     }
 
-    private companion object { const val TAG = "Tts" }
+    private companion object {
+        const val TAG = "Tts"
+
+        // Tone — tuned for "calm human narrator" on Google/Samsung TTS.
+        const val PITCH_HUMAN = 0.9f
+        const val RATE_HUMAN = 0.88f
+
+        const val VOLUME_NORMAL = 1.0f
+        const val VOLUME_WHISPER = 0.3f
+    }
 }

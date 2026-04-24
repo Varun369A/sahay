@@ -11,6 +11,18 @@
     <string name="settings_notifications_body">Let Sahay read recent notifications so you can ask "what did Amirtha say?" or "read my WhatsApp". Payment and banking apps are always excluded.</string>
     <string name="settings_notifications_grant">Grant notification access</string>
 
+    <!-- Proactive announce + Quiet Hours -->
+    <string name="settings_proactive_title">Proactive announcements</string>
+    <string name="settings_proactive_body">Sahay speaks up when an important message or call arrives — "Boss Abhilash is calling", "Amirtha says, meeting at four".</string>
+    <string name="settings_quiet_hours_title">Quiet Hours</string>
+    <string name="settings_quiet_hours_body">Only the most important people break through during this window.</string>
+    <string name="settings_quiet_hours_start">Start</string>
+    <string name="settings_quiet_hours_end">End</string>
+    <string name="settings_dnd_threshold">Break-through importance</string>
+    <string name="settings_dnd_threshold_body">Only contacts you\'ve marked importance %1$d or above will announce during Quiet Hours.</string>
+    <string name="settings_quiet_whisper">Whisper during Quiet Hours</string>
+    <string name="settings_quiet_whisper_body">Speak at low volume instead of being silent.</string>
+
     <!-- Onboarding -->
     <string name="onboarding_title">Welcome to Sahay</string>
     <string name="onboarding_subtitle">Your AI hands. Voice-driven. Privacy-first.</string>

@@ -3,6 +3,7 @@ package io.sahay.data.secrets
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,6 +33,20 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val WakeWordEnabled = booleanPreferencesKey("wake_word_enabled")
         val VoiceLocale = stringPreferencesKey("voice_locale")
         val NotificationsEnabled = booleanPreferencesKey("notifications_enabled")
+
+        // Proactive voice announcements ("message from boss", "Amirtha is calling")
+        val ProactiveAnnounceEnabled = booleanPreferencesKey("proactive_announce_enabled")
+
+        // Quiet Hours window (minutes-of-day, 0..1439). If start == end, window is disabled.
+        val QuietHoursStartMin = intPreferencesKey("quiet_hours_start_min")
+        val QuietHoursEndMin = intPreferencesKey("quiet_hours_end_min")
+
+        // During Quiet Hours, only notifications whose contact importance
+        // is >= this value will announce. 10 = only the most critical people.
+        val DndImportanceThreshold = intPreferencesKey("dnd_importance_threshold")
+
+        // Whisper mode: during Quiet Hours lower TTS volume rather than mute.
+        val QuietHoursWhisper = booleanPreferencesKey("quiet_hours_whisper")
     }
 
     val assistantName: Flow<String> = context.dataStore.data.map {
@@ -50,6 +65,21 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         // notifications off-device before consent.
         it[Keys.NotificationsEnabled] ?: false
     }
+    val proactiveAnnounceEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.ProactiveAnnounceEnabled] ?: false
+    }
+    val quietHoursStartMin: Flow<Int> = context.dataStore.data.map {
+        it[Keys.QuietHoursStartMin] ?: 22 * 60           // 22:00 default
+    }
+    val quietHoursEndMin: Flow<Int> = context.dataStore.data.map {
+        it[Keys.QuietHoursEndMin] ?: 7 * 60              // 07:00 default
+    }
+    val dndImportanceThreshold: Flow<Int> = context.dataStore.data.map {
+        it[Keys.DndImportanceThreshold] ?: 8             // only importance≥8 breaks through
+    }
+    val quietHoursWhisper: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.QuietHoursWhisper] ?: true               // whisper > mute by default
+    }
 
     suspend fun setAssistantName(value: String) = context.dataStore.edit {
         it[Keys.AssistantName] = value.ifBlank { "Sahay" }
@@ -63,6 +93,21 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     suspend fun setNotificationsEnabled(value: Boolean) = context.dataStore.edit {
         it[Keys.NotificationsEnabled] = value
     }
+    suspend fun setProactiveAnnounceEnabled(value: Boolean) = context.dataStore.edit {
+        it[Keys.ProactiveAnnounceEnabled] = value
+    }
+    suspend fun setQuietHoursStartMin(value: Int) = context.dataStore.edit {
+        it[Keys.QuietHoursStartMin] = value.coerceIn(0, 24 * 60 - 1)
+    }
+    suspend fun setQuietHoursEndMin(value: Int) = context.dataStore.edit {
+        it[Keys.QuietHoursEndMin] = value.coerceIn(0, 24 * 60 - 1)
+    }
+    suspend fun setDndImportanceThreshold(value: Int) = context.dataStore.edit {
+        it[Keys.DndImportanceThreshold] = value.coerceIn(1, 10)
+    }
+    suspend fun setQuietHoursWhisper(value: Boolean) = context.dataStore.edit {
+        it[Keys.QuietHoursWhisper] = value
+    }
 
     suspend fun snapshot(): Snapshot {
         val data = context.dataStore.data.first()
@@ -71,6 +116,11 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
             wakeWordEnabled = data[Keys.WakeWordEnabled] ?: true,
             voiceLocale = data[Keys.VoiceLocale] ?: "en-IN",
             notificationsEnabled = data[Keys.NotificationsEnabled] ?: false,
+            proactiveAnnounceEnabled = data[Keys.ProactiveAnnounceEnabled] ?: false,
+            quietHoursStartMin = data[Keys.QuietHoursStartMin] ?: 22 * 60,
+            quietHoursEndMin = data[Keys.QuietHoursEndMin] ?: 7 * 60,
+            dndImportanceThreshold = data[Keys.DndImportanceThreshold] ?: 8,
+            quietHoursWhisper = data[Keys.QuietHoursWhisper] ?: true,
         )
     }
 
@@ -79,5 +129,10 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val wakeWordEnabled: Boolean,
         val voiceLocale: String,
         val notificationsEnabled: Boolean,
+        val proactiveAnnounceEnabled: Boolean = false,
+        val quietHoursStartMin: Int = 22 * 60,
+        val quietHoursEndMin: Int = 7 * 60,
+        val dndImportanceThreshold: Int = 8,
+        val quietHoursWhisper: Boolean = true,
     )
 }

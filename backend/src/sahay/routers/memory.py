@@ -68,6 +68,28 @@ async def list_memory(
     return [MemoryOut.model_validate(m) for m in memories]
 
 
+@router.get(
+    "/important-contacts",
+    response_model=list[MemoryOut],
+    dependencies=[Depends(rate_limit("memory_read", per_minute=30))],
+)
+async def list_important_contacts(
+    min_importance: int = 8,
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(current_user),
+) -> list[MemoryOut]:
+    """People/work memories the user flagged importance ≥ threshold.
+
+    Consumed by the Android notification listener to decide who can
+    break through Quiet Hours.
+    """
+    min_imp = max(1, min(10, min_importance))
+    memories = await memory_service.list_important_contacts(
+        db, user_id=user.id, min_importance=min_imp,
+    )
+    return [MemoryOut.model_validate(m) for m in memories]
+
+
 @router.post(
     "",
     response_model=MemoryOut,

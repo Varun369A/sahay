@@ -28,6 +28,11 @@ data class SettingsState(
     val wakeWordEnabled: Boolean = true,
     val notificationsEnabled: Boolean = false,
     val notificationListenerGranted: Boolean = false,
+    val proactiveAnnounceEnabled: Boolean = false,
+    val quietHoursStartMin: Int = 22 * 60,
+    val quietHoursEndMin: Int = 7 * 60,
+    val dndImportanceThreshold: Int = 8,
+    val quietHoursWhisper: Boolean = true,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
     val errorKey: String? = null,
@@ -54,6 +59,11 @@ class SettingsViewModel @Inject constructor(
                     notificationsEnabled = snap.notificationsEnabled,
                     notificationListenerGranted =
                         Permissions.isNotificationListenerEnabled(context),
+                    proactiveAnnounceEnabled = snap.proactiveAnnounceEnabled,
+                    quietHoursStartMin = snap.quietHoursStartMin,
+                    quietHoursEndMin = snap.quietHoursEndMin,
+                    dndImportanceThreshold = snap.dndImportanceThreshold,
+                    quietHoursWhisper = snap.quietHoursWhisper,
                 )
             }
         }
@@ -128,6 +138,31 @@ class SettingsViewModel @Inject constructor(
 
     fun openNotificationListenerSettings() {
         Permissions.openNotificationListenerSettings(context)
+    }
+
+    fun setProactiveAnnounceEnabled(value: Boolean) {
+        _state.update { it.copy(proactiveAnnounceEnabled = value) }
+        viewModelScope.launch { prefs.setProactiveAnnounceEnabled(value) }
+    }
+
+    fun setQuietHoursStart(totalMin: Int) {
+        _state.update { it.copy(quietHoursStartMin = totalMin) }
+        viewModelScope.launch { prefs.setQuietHoursStartMin(totalMin) }
+    }
+
+    fun setQuietHoursEnd(totalMin: Int) {
+        _state.update { it.copy(quietHoursEndMin = totalMin) }
+        viewModelScope.launch { prefs.setQuietHoursEndMin(totalMin) }
+    }
+
+    fun setDndImportanceThreshold(value: Int) {
+        _state.update { it.copy(dndImportanceThreshold = value) }
+        viewModelScope.launch { prefs.setDndImportanceThreshold(value) }
+    }
+
+    fun setQuietHoursWhisper(value: Boolean) {
+        _state.update { it.copy(quietHoursWhisper = value) }
+        viewModelScope.launch { prefs.setQuietHoursWhisper(value) }
     }
 
     fun deleteMyData() {
