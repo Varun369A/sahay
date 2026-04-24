@@ -83,6 +83,14 @@ class ActionRunner @Inject constructor(
             val outcome = executor.executeStep(step, appPackage)
             when (outcome) {
                 is PlaybookExecutor.StepOutcome.Failed -> {
+                    // Honor step.onFailure — conditional "if-on-this-screen" steps
+                    // (profile picker, back-from-playback) MUST not abort the task.
+                    val onFailure = step.onFailure?.lowercase() ?: "abort"
+                    if (onFailure in OPTIONAL_ON_FAILURE) {
+                        android.util.Log.i("ActionRunner",
+                            "step_${step.step}_skipped reason=${outcome.reason} policy=$onFailure")
+                        continue   // skip this step, move on to the next
+                    }
                     log(appPackage, intent, "failed", System.currentTimeMillis() - started, failureReason = outcome.reason)
                     return@withContext RunResult(success = false, reason = outcome.reason)
                 }
@@ -130,4 +138,9 @@ class ActionRunner @Inject constructor(
     }
 
     data class RunResult(val success: Boolean, val reason: String? = null)
+
+    private companion object {
+        /** Step.onFailure values that mean "step is conditional — skip on miss". */
+        val OPTIONAL_ON_FAILURE = setOf("skip", "continue", "optional", "ignore")
+    }
 }
