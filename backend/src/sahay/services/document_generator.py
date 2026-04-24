@@ -214,7 +214,9 @@ def _render_resume_pdf(data: dict[str, Any]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        Paragraph, SimpleDocTemplate, Spacer,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
     )
 
     styles = getSampleStyleSheet()
@@ -408,7 +410,7 @@ def _render_letter_pdf(data: dict[str, Any]) -> bytes:
 
 def _render_presentation_pptx(data: dict[str, Any]) -> bytes:
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Pt
 
     prs = Presentation()                                # default 4:3 blank deck
     title_layout = prs.slide_layouts[0]                 # Title Slide
@@ -522,7 +524,7 @@ async def create(
             max_tokens=2048,
             temperature=0.3,                            # some creative freedom
         )
-    except Exception as e:                              # noqa: BLE001
+    except Exception as e:
         log.exception("doc_structure_failed", kind=kind)
         raise GenerationError(
             "Couldn't draft the document right now. Try again in a moment."
@@ -533,7 +535,7 @@ async def create(
     # 2) Render bytes.
     try:
         content_bytes = renderer(data)
-    except Exception as e:                              # noqa: BLE001
+    except Exception as e:
         log.exception("doc_render_failed", kind=kind)
         raise GenerationError(
             "The document was drafted but rendering failed. "

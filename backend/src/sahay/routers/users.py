@@ -7,7 +7,7 @@ usage_periods. We additionally purge R2 prefix.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete as sqldelete
@@ -42,7 +42,7 @@ async def me(
     db: AsyncSession = Depends(get_db_session),
     user: User = Depends(current_user),
 ) -> MeResponse:
-    user.last_active_at = datetime.now(timezone.utc)
+    user.last_active_at = datetime.now(UTC)
     return MeResponse.model_validate(user)
 
 
@@ -115,7 +115,7 @@ async def revoke_app(
     grant = await db.get(UserAppGrant, (user.id, app_package))
     if grant is None or grant.revoked_at is not None:
         raise HTTPException(404, "grant_not_found")
-    grant.revoked_at = datetime.now(timezone.utc)
+    grant.revoked_at = datetime.now(UTC)
 
 
 # ─── Privacy: delete my data ────────────────────────────────────────
@@ -143,4 +143,4 @@ async def delete_my_data(
     await db.execute(sqldelete(User).where(User.id == user_id))
 
     log.info("delete_my_data_complete", user_id=str(user_id))
-    return DeleteMyDataResponse(deleted_at=datetime.now(timezone.utc))
+    return DeleteMyDataResponse(deleted_at=datetime.now(UTC))

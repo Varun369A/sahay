@@ -7,7 +7,7 @@ and updated post-action. Race-safe via Postgres UPSERT.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sahay.db.models import UsagePeriod
-from sahay.domain.tiers import Tier, get_limits
+from sahay.domain.tiers import get_limits
 
 
 @dataclass(slots=True)
@@ -30,7 +30,7 @@ class UsageSnapshot:
 
 
 def _today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _week_start(d: date) -> date:

@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 DocKind = Literal["resume", "report", "presentation", "letter", "plain"]
 
 

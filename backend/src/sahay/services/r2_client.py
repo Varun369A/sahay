@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from uuid import UUID, uuid4
 
 import boto3

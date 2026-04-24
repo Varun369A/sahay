@@ -7,7 +7,7 @@ max 5 verification attempts per challenge.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import bcrypt
@@ -53,7 +53,7 @@ async def issue_otp(
         email=email.lower(),
         code_hash=_hash(code),
         purpose=purpose,
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS),
+        expires_at=datetime.now(UTC) + timedelta(seconds=OTP_TTL_SECONDS),
         requested_ip=requested_ip,
     )
     db.add(challenge)
@@ -73,7 +73,7 @@ async def verify_otp(
     On wrong code: increments attempts, returns False.
     On expired/exhausted/missing: returns False.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(OtpChallenge)
         .where(
@@ -110,7 +110,7 @@ async def recent_request_count(
 
     Used by the auth router for rate limiting (defense in depth alongside Redis).
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
     stmt = (
         select(OtpChallenge.id)
         .where(

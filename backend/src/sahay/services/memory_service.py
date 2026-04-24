@@ -46,8 +46,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -141,7 +140,7 @@ async def remember(
             "category": category[:32] or "facts",
             "importance": imp,
             "source": source[:16] or "agent",
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(UTC),
         },
     ).returning(UserMemory)
 
@@ -280,12 +279,12 @@ async def top_for_prompt(
     if not rows:
         return []
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     scored: list[tuple[float, UserMemory]] = []
     for r in rows:
         hours = max(
             0.0,
-            (now - r.last_accessed_at.replace(tzinfo=timezone.utc if r.last_accessed_at.tzinfo is None else r.last_accessed_at.tzinfo)).total_seconds() / 3600.0,
+            (now - r.last_accessed_at.replace(tzinfo=UTC if r.last_accessed_at.tzinfo is None else r.last_accessed_at.tzinfo)).total_seconds() / 3600.0,
         )
         decay = max(MIN_DECAY, math.exp(-hours / TAU_HOURS))
         score = r.importance * decay

@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, mapped_column
 
 # Naming convention for constraints — keeps Alembic diffs stable.
 NAMING_CONVENTION = {

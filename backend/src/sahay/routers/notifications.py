@@ -27,11 +27,14 @@ from pydantic import BaseModel
 from sahay.db.models import User
 from sahay.deps import current_user
 from sahay.schemas.notifications import (
-    NotificationIn, NotificationIngestRequest, NotificationIngestResponse,
+    NotificationIn,
+    NotificationIngestRequest,
+    NotificationIngestResponse,
     NotificationOut,
 )
 from sahay.services.notification_store import (
-    Notification, get_notification_store,
+    Notification,
+    get_notification_store,
 )
 from sahay.services.rate_limiter import rate_limit
 

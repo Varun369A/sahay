@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -28,7 +28,7 @@ settings = get_settings()
 
 def create_access_token(user: User) -> tuple[str, int]:
     """Returns (jwt, expires_in_seconds)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     exp = now + timedelta(minutes=settings.access_token_ttl_minutes)
     payload: dict[str, Any] = {
         "sub": str(user.id),
@@ -77,7 +77,7 @@ async def issue_refresh_token(
         token_hash=_hash_refresh(raw),
         device_id=device_id,
         user_agent=user_agent[:255] if user_agent else None,
-        expires_at=datetime.now(timezone.utc)
+        expires_at=datetime.now(UTC)
                    + timedelta(days=settings.refresh_token_ttl_days),
     )
     db.add(rt)
@@ -96,7 +96,7 @@ async def rotate_refresh_token(
     Raises InvalidRefreshToken on any failure.
     """
     digest = _hash_refresh(raw_token)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     stmt = select(RefreshToken).where(RefreshToken.token_hash == digest)
     rt = (await db.execute(stmt)).scalar_one_or_none()
@@ -123,7 +123,7 @@ async def revoke_refresh_token(db: AsyncSession, raw_token: str) -> None:
     stmt = select(RefreshToken).where(RefreshToken.token_hash == digest)
     rt = (await db.execute(stmt)).scalar_one_or_none()
     if rt and rt.revoked_at is None:
-        rt.revoked_at = datetime.now(timezone.utc)
+        rt.revoked_at = datetime.now(UTC)
 
 
 async def _revoke_all_for_user(db: AsyncSession, user_id: UUID) -> None:
@@ -131,7 +131,7 @@ async def _revoke_all_for_user(db: AsyncSession, user_id: UUID) -> None:
         RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
     )
     rows = (await db.execute(stmt)).scalars().all()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for rt in rows:
         rt.revoked_at = now
 

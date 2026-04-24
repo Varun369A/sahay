@@ -22,7 +22,6 @@ from sahay.services.jwt_service import (
     safe_decode_access_token,
 )
 
-
 _BEARER = "Bearer "
 
 

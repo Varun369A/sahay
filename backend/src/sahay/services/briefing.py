@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,10 +32,13 @@ from sahay.services import memory_service
 from sahay.services.claude_client import _PRICING_PAISE_PER_MTOK, _get_client
 from sahay.services.follow_ups import (
     format_for_prompt as format_follow_ups,
+)
+from sahay.services.follow_ups import (
     get_follow_up_store,
 )
 from sahay.services.notification_store import (
-    Notification, get_notification_store,
+    Notification,
+    get_notification_store,
 )
 from sahay.util.logging import get_logger
 
@@ -129,13 +131,13 @@ async def compose(
 
     try:
         recent = await notif_store.recent(user_id, limit=40, since_seconds=10 * 3600)
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.warning("briefing_notif_fail", err=str(e))
         recent = []
 
     try:
         follow_ups = await fu_store.list(user_id, limit=6)
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.warning("briefing_followups_fail", err=str(e))
         follow_ups = []
 
@@ -146,7 +148,7 @@ async def compose(
                 db, user_id=UUID(user_id),
             )
             ltm_block = memory_service.format_for_prompt(mems)
-        except Exception as e:                               # noqa: BLE001
+        except Exception as e:
             log.warning("briefing_ltm_fail", err=str(e))
 
     missed_calls = _count_missed_calls(recent)
@@ -192,7 +194,7 @@ async def compose(
             temperature=0.4,
             tools=[_web_search_tool_for(locale)],
         )
-    except Exception as e:                                   # noqa: BLE001
+    except Exception:
         log.exception("briefing_sonnet_failed")
         # Deterministic fallback so the user still hears *something*.
         parts = [f"Good {tod}."]

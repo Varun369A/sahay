@@ -20,8 +20,6 @@ Stack per call (in order):
 
 from __future__ import annotations
 
-import base64
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,19 +27,29 @@ from anthropic.types import Message
 
 from sahay.config import get_settings
 from sahay.schemas.agent import AgentObservation, AgentTool
+from sahay.services import memory_service
 from sahay.services.claude_client import _PRICING_PAISE_PER_MTOK, _get_client
 from sahay.services.conversation_memory import (
-    Turn, abbreviate_tool_args, format_for_prompt, get_conversation_memory,
+    Turn,
+    abbreviate_tool_args,
+    format_for_prompt,
+    get_conversation_memory,
 )
 from sahay.services.firewall import get_firewall
-from sahay.services import memory_service
 from sahay.services.notification_store import (
     format_for_prompt as format_notifications_for_prompt,
+)
+from sahay.services.notification_store import (
     get_notification_store,
 )
 from sahay.services.planner import (
-    Plan, format_for_prompt as format_plan_for_prompt,
-    generate_plan, mark_step_progress, should_replan,
+    Plan,
+    generate_plan,
+    mark_step_progress,
+    should_replan,
+)
+from sahay.services.planner import (
+    format_for_prompt as format_plan_for_prompt,
 )
 from sahay.util.logging import get_logger
 
@@ -780,13 +788,13 @@ async def _load_or_generate_plan(
             assistant_name=assistant_name,
             ltm_block=ltm_block,
         )
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.exception("plan_generate_failed", err=str(e))
         return None
 
     try:
         await memory.set_plan(user_id, conversation_id, plan.to_dict())
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.warning("plan_persist_failed", err=str(e))
 
     return plan
@@ -859,7 +867,7 @@ async def step(
             from uuid import UUID as _UUID
             mems = await memory_service.top_for_prompt(db, user_id=_UUID(user_id))
             ltm_block = memory_service.format_for_prompt(mems)
-        except Exception as e:                               # noqa: BLE001
+        except Exception as e:
             log.warning("ltm_load_failed", err=str(e))
 
     # ── Recent notifications (last 30min) for Claude context ──
@@ -875,7 +883,7 @@ async def step(
             if n.text:
                 n.text = (await fw.scrubber.scrub(n.text, obs.conversation_id)).scrubbed
         notifications_block = format_notifications_for_prompt(recent)
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.warning("notifications_load_failed", err=str(e))
 
     # ── Pending reply draft block (Round 4 voice-reply confirmation) ──
@@ -903,7 +911,7 @@ async def step(
                 "reply_to_notification(notification_key, text). If they edit, "
                 "re-stage with stage_reply."
             )
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         log.warning("draft_load_failed", err=str(e))
 
     # ── Fetch user role + locale for system-prompt personalisation ──
@@ -912,12 +920,13 @@ async def step(
     if db is not None:
         try:
             from uuid import UUID as _UUID
+
             from sahay.db.models import User as _User
             user_obj = await db.get(_User, _UUID(user_id))
             if user_obj is not None:
                 user_role = user_obj.role
                 user_locale = user_obj.locale
-        except Exception as e:                               # noqa: BLE001
+        except Exception as e:
             log.warning("user_fetch_failed", err=str(e))
 
     # ── Plan-first: generate/load plan ──
@@ -1012,7 +1021,7 @@ async def step(
                     user_id, obs.conversation_id,
                     notification_key=nkey, contact=contact, text=reply_text,
                 )
-            except Exception as e:                               # noqa: BLE001
+            except Exception as e:
                 log.warning("stage_reply_persist_failed", err=str(e))
 
             preview = reply_text if len(reply_text) <= 140 else reply_text[:140] + "…"
@@ -1033,7 +1042,7 @@ async def step(
     if action.tool == "reply_to_notification":
         try:
             pending = await memory.get_draft_reply(user_id, obs.conversation_id)
-        except Exception:                                        # noqa: BLE001
+        except Exception:
             pending = None
 
         if pending and db is not None:
@@ -1054,12 +1063,12 @@ async def step(
                             key=mem_row.key, new_importance=new_imp,
                             contact_hint=contact_hint,
                         )
-                except Exception as e:                           # noqa: BLE001
+                except Exception as e:
                     log.warning("learned_priority_failed", err=str(e))
 
         try:
             await memory.clear_draft_reply(user_id, obs.conversation_id)
-        except Exception as e:                                   # noqa: BLE001
+        except Exception as e:
             log.warning("draft_clear_failed", err=str(e))
 
     # ── Server-side: note_followup persists the commitment; the action
@@ -1073,7 +1082,7 @@ async def step(
                 await get_follow_up_store().add(
                     user_id, fu_text[:400], source="agent",
                 )
-            except Exception as e:                               # noqa: BLE001
+            except Exception as e:
                 log.warning("followup_persist_failed", err=str(e))
             action = AgentTool(
                 tool="speak",
@@ -1114,7 +1123,7 @@ async def step(
                     importance=4,
                     source="agent",
                 )
-            except Exception:                            # noqa: BLE001
+            except Exception:
                 pass
             action = AgentTool(
                 tool="speak",
@@ -1127,7 +1136,7 @@ async def step(
                 message=str(e),
                 reasoning="doc_generation_failed",
             )
-        except Exception as e:                           # noqa: BLE001
+        except Exception as e:
             log.exception("doc_create_failed", kind=kind)
             action = AgentTool(
                 tool="speak",
@@ -1153,7 +1162,7 @@ async def step(
                 await memory_service.forget(
                     db, user_id=_UUID(user_id), key=action.key,
                 )
-        except Exception as e:                                   # noqa: BLE001
+        except Exception as e:
             log.warning("ltm_write_failed", tool=action.tool, err=str(e))
 
     # ── Restore PII in outbound action fields so device types real values ──
@@ -1187,7 +1196,7 @@ async def step(
                 await memory.set_plan(
                     user_id, obs.conversation_id, plan.to_dict(),
                 )
-        except Exception as e:                               # noqa: BLE001
+        except Exception as e:
             log.warning("plan_update_failed", err=str(e))
 
     # ── Record turn in conversation memory ──

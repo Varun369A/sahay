@@ -102,7 +102,7 @@ async def resolve(
             max_tokens=512,
             temperature=0.0,
         )
-    except Exception as e:                  # noqa: BLE001
+    except Exception as e:
         log.exception("resolve_claude_error")
         return ResolveResult(found=False, notes=f"claude_error:{e!s}")
 

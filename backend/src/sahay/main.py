@@ -25,8 +25,17 @@ from sahay import __version__
 from sahay.config import get_settings
 from sahay.db.session import dispose_engine
 from sahay.routers import (
-    actions, agent, auth, briefing, documents, files, health, memory,
-    notifications, playbooks, users,
+    actions,
+    agent,
+    auth,
+    briefing,
+    documents,
+    files,
+    health,
+    memory,
+    notifications,
+    playbooks,
+    users,
 )
 from sahay.util.logging import configure_logging, get_logger
 

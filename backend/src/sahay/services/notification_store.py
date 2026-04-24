@@ -135,7 +135,7 @@ class NotificationStore:
         try:
             raw = await r.smembers(seen_key)
             existing = {str(k) for k in raw}
-        except Exception as e:                                # noqa: BLE001
+        except Exception as e:
             log.warning("notif_seen_read_failed", err=str(e))
 
         fresh = [n for n in kept if n.key not in existing]

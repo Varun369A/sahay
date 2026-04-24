@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # Role values accepted by the API. Keep in sync with the Android role picker
 # (io.sahay.ui.screens.settings.roles). "other" is the catch-all; null means
 # the user hasn't picked yet.

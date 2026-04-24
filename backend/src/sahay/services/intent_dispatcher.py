@@ -87,7 +87,7 @@ async def dispatch(
             max_tokens=512,
             temperature=0.0,
         )
-    except Exception as e:                       # noqa: BLE001
+    except Exception as e:
         log.exception("dispatch_claude_error")
         return DispatchResult(matched=False, notes=f"claude_error:{e!s}")
 

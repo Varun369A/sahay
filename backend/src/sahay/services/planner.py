@@ -208,7 +208,7 @@ async def generate_plan(
             max_tokens=1024,
             temperature=0.0,
         )
-    except Exception as e:                        # noqa: BLE001
+    except Exception as e:
         log.exception("planner_failed")
         return _degenerate_plan(goal, reason=f"planner_exception:{e!s}")
 

@@ -64,7 +64,17 @@ def rate_limit(scope: str, per_minute: int | None = None) -> Callable:
         user_id = getattr(request.state, "user_id", None)
         identifier = str(user_id) if user_id else (client_ip(request) or "anon")
         key = f"{scope}:{identifier}"
-        allowed, count = await _check_and_incr(key, limit, window_seconds=60)
+
+        # Fail open on Redis hiccups — rate-limiting is a protection, not a
+        # correctness requirement. Better to let the request through than
+        # 500 the entire API any time Upstash sneezes. Other layers
+        # (Anthropic, Postgres pool) provide natural backpressure.
+        try:
+            allowed, count = await _check_and_incr(key, limit, window_seconds=60)
+        except Exception as e:                                   # noqa: BLE001
+            log.warning("rate_limit_fail_open", scope=scope, err=str(e))
+            return
+
         if not allowed:
             log.warning("rate_limit_exceeded", scope=scope, identifier=identifier, count=count)
             raise HTTPException(
