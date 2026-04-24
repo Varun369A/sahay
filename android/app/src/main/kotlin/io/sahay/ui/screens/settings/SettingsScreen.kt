@@ -25,10 +25,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -42,6 +46,16 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
     val vm: SettingsViewModel = hiltViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // Re-check notification-listener grant when the user returns from system settings.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.refreshPermissionGrants()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     if (state.deleted) {
         onLoggedOut()
@@ -101,6 +115,40 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
                         checked = state.wakeWordEnabled,
                         onCheckedChange = vm::setWakeWordEnabled,
                     )
+                }
+            }
+        }
+
+        // ─── Notification awareness ─────────────────────────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.settings_notifications),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(R.string.settings_notifications_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.notificationsEnabled &&
+                            state.notificationListenerGranted,
+                        onCheckedChange = vm::setNotificationsEnabled,
+                        enabled = state.notificationListenerGranted,
+                    )
+                }
+                if (!state.notificationListenerGranted) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = vm::openNotificationListenerSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.settings_notifications_grant))
+                    }
                 }
             }
         }

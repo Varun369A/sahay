@@ -262,3 +262,35 @@ data class GenerateImageRequest(
 
 @Serializable
 data class EditImageRequest(val prompt: String)
+
+// ─── Notifications (listener → backend) ──────────────────────────────
+
+@Serializable
+data class NotificationIn(
+    val key: String,
+    val `package`: String,
+    @SerialName("app_name") val appName: String? = null,
+    val title: String? = null,
+    val text: String? = null,
+    val category: String? = null,
+    @SerialName("posted_at") val postedAt: Double,
+    @SerialName("is_ongoing") val isOngoing: Boolean = false,
+)
+
+@Serializable
+data class NotificationIngestRequest(val notifications: List<NotificationIn>)
+
+@Serializable
+data class NotificationIngestResponse(val stored: Int, val dropped: Int)
+
+@Serializable
+data class NotificationOut(
+    val key: String,
+    val `package`: String,
+    @SerialName("app_name") val appName: String,
+    val title: String,
+    val text: String,
+    val category: String,
+    @SerialName("posted_at") val postedAt: Double,
+    @SerialName("is_ongoing") val isOngoing: Boolean,
+)

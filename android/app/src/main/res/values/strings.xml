@@ -6,6 +6,11 @@
     <string name="accessibility_service_summary">Lets Sahay tap, type, and read screens on your behalf for the apps you allow.</string>
     <string name="accessibility_service_description">Sahay uses the Accessibility Service to perform actions you ask for in apps you have explicitly allowed (in Sahay → Settings → Apps). Sahay will never perform actions in payment, banking, or money-transfer apps. All destructive actions (sending, deleting, posting) require your tap-to-confirm. Screen content is processed on-device — only abstract action metadata is sent to the Sahay server.</string>
 
+    <string name="notification_listener_label">Sahay — Notification Awareness</string>
+    <string name="settings_notifications">Notification awareness</string>
+    <string name="settings_notifications_body">Let Sahay read recent notifications so you can ask "what did Amirtha say?" or "read my WhatsApp". Payment and banking apps are always excluded.</string>
+    <string name="settings_notifications_grant">Grant notification access</string>
+
     <!-- Onboarding -->
     <string name="onboarding_title">Welcome to Sahay</string>
     <string name="onboarding_subtitle">Your AI hands. Voice-driven. Privacy-first.</string>

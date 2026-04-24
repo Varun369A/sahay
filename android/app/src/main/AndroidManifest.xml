@@ -90,5 +90,18 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- ─── Notification Listener (passive context for Jarvis) ──────── -->
+        <!-- System binds this only after the user grants access in Settings.
+             Payment / banking apps are dropped client-side AND backend-side. -->
+        <service
+            android:name=".service.SahayNotificationListenerService"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 </manifest>

@@ -81,4 +81,17 @@ interface SahayApi {
 
     @DELETE("/v1/files/{id}")
     suspend fun deleteFile(@Path("id") id: String)
+
+    // ─── Notifications (listener) ────────────────────────────────────
+    @POST("/v1/notifications/ingest")
+    suspend fun ingestNotifications(
+        @Body body: NotificationIngestRequest,
+    ): NotificationIngestResponse
+
+    @GET("/v1/notifications/recent")
+    suspend fun recentNotifications(
+        @Query("limit") limit: Int = 10,
+        @Query("since_seconds") sinceSeconds: Int? = null,
+        @Query("package") appPackage: String? = null,
+    ): List<NotificationOut>
 }

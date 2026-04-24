@@ -31,6 +31,7 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val AssistantName = stringPreferencesKey("assistant_name")
         val WakeWordEnabled = booleanPreferencesKey("wake_word_enabled")
         val VoiceLocale = stringPreferencesKey("voice_locale")
+        val NotificationsEnabled = booleanPreferencesKey("notifications_enabled")
     }
 
     val assistantName: Flow<String> = context.dataStore.data.map {
@@ -43,6 +44,12 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     val voiceLocale: Flow<String> = context.dataStore.data.map {
         it[Keys.VoiceLocale] ?: "en-IN"
     }
+    val notificationsEnabled: Flow<Boolean> = context.dataStore.data.map {
+        // Default OFF until the user explicitly grants the notification
+        // listener permission — we do NOT want to silently ship
+        // notifications off-device before consent.
+        it[Keys.NotificationsEnabled] ?: false
+    }
 
     suspend fun setAssistantName(value: String) = context.dataStore.edit {
         it[Keys.AssistantName] = value.ifBlank { "Sahay" }
@@ -53,6 +60,9 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     suspend fun setVoiceLocale(value: String) = context.dataStore.edit {
         it[Keys.VoiceLocale] = value
     }
+    suspend fun setNotificationsEnabled(value: Boolean) = context.dataStore.edit {
+        it[Keys.NotificationsEnabled] = value
+    }
 
     suspend fun snapshot(): Snapshot {
         val data = context.dataStore.data.first()
@@ -60,6 +70,7 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
             assistantName = data[Keys.AssistantName] ?: "Sahay",
             wakeWordEnabled = data[Keys.WakeWordEnabled] ?: true,
             voiceLocale = data[Keys.VoiceLocale] ?: "en-IN",
+            notificationsEnabled = data[Keys.NotificationsEnabled] ?: false,
         )
     }
 
@@ -67,5 +78,6 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val assistantName: String,
         val wakeWordEnabled: Boolean,
         val voiceLocale: String,
+        val notificationsEnabled: Boolean,
     )
 }

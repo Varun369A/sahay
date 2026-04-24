@@ -12,6 +12,7 @@ import io.sahay.data.repository.AppRepository
 import io.sahay.data.secrets.UserPreferences
 import io.sahay.engine.PaymentBlocklist
 import io.sahay.service.WakeWordService
+import io.sahay.util.Permissions
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,8 @@ data class SettingsState(
     val grants: List<AppGrantOut> = emptyList(),
     val assistantName: String = "Sahay",
     val wakeWordEnabled: Boolean = true,
+    val notificationsEnabled: Boolean = false,
+    val notificationListenerGranted: Boolean = false,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
     val errorKey: String? = null,
@@ -48,8 +51,21 @@ class SettingsViewModel @Inject constructor(
                 it.copy(
                     assistantName = snap.assistantName,
                     wakeWordEnabled = snap.wakeWordEnabled,
+                    notificationsEnabled = snap.notificationsEnabled,
+                    notificationListenerGranted =
+                        Permissions.isNotificationListenerEnabled(context),
                 )
             }
+        }
+    }
+
+    /** Re-check the listener grant when the user returns from system settings. */
+    fun refreshPermissionGrants() {
+        _state.update {
+            it.copy(
+                notificationListenerGranted =
+                    Permissions.isNotificationListenerEnabled(context),
+            )
         }
     }
 
@@ -103,6 +119,15 @@ class SettingsViewModel @Inject constructor(
             prefs.setWakeWordEnabled(enabled)
             if (enabled) WakeWordService.start(context) else WakeWordService.stop(context)
         }
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        _state.update { it.copy(notificationsEnabled = enabled) }
+        viewModelScope.launch { prefs.setNotificationsEnabled(enabled) }
+    }
+
+    fun openNotificationListenerSettings() {
+        Permissions.openNotificationListenerSettings(context)
     }
 
     fun deleteMyData() {

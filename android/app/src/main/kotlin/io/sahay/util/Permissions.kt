@@ -46,4 +46,24 @@ object Permissions {
         }
         context.startActivity(intent)
     }
+
+    /** True if Sahay's NotificationListenerService is enabled in system settings. */
+    fun isNotificationListenerEnabled(context: Context): Boolean {
+        // enabled_notification_listeners is a colon-separated list of
+        // ComponentName strings. Cheaper + more reliable than reflecting into
+        // NotificationManagerCompat across OEM ROMs.
+        val flat = Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners",
+        ) ?: return false
+        val pkg = context.packageName
+        return flat.split(':').any { it.contains(pkg, ignoreCase = true) }
+    }
+
+    fun openNotificationListenerSettings(context: Context) {
+        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
 }
