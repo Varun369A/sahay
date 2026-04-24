@@ -92,9 +92,9 @@ class WakeWordService : Service() {
 
     private suspend fun initAndRun() {
         val snap = prefs.snapshot()
-        wakePhrases = buildWakePhrases(snap.assistantName, snap.wakeKeyword)
+        wakePhrases = buildWakePhrases(snap.assistantName)
         locale = snap.voiceLocale
-        Log.i(TAG, "wake_phrases=$wakePhrases")
+        Log.i(TAG, "wake_phrases=$wakePhrases (name-driven)")
 
         when (val s = voskModel.ensureModel()) {
             is VoskModelManager.State.Ready -> {
@@ -230,20 +230,16 @@ class WakeWordService : Service() {
         return out
     }
 
-    private fun buildWakePhrases(assistantName: String, fallbackKeyword: String): List<String> {
+    /**
+     * Wake phrases are derived ONLY from the user's chosen assistant name.
+     * Saying the name alone is the trigger — no "hey" / "ok" required.
+     * We still accept those prefixes so natural phrasing works ("hey Pluto,
+     * call Amirtha" and "Pluto call Amirtha" both wake).
+     */
+    private fun buildWakePhrases(assistantName: String): List<String> {
         val name = assistantName.trim().lowercase()
-        val list = mutableListOf<String>()
-        if (name.isNotBlank()) {
-            list += "hey $name"
-            list += "ok $name"
-            list += name
-        }
-        val kw = fallbackKeyword.trim().lowercase()
-        if (kw.isNotBlank() && kw !in list) {
-            list += "hey $kw"
-            list += kw
-        }
-        return list.distinct()
+        if (name.isBlank()) return listOf("sahay")
+        return listOf(name, "hey $name", "ok $name", "okay $name").distinct()
     }
 
     // ─── Notification ─────────────────────────────────────────────────

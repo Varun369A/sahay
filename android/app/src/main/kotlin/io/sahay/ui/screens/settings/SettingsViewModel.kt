@@ -24,9 +24,7 @@ data class SettingsState(
     val usage: UsageOut? = null,
     val grants: List<AppGrantOut> = emptyList(),
     val assistantName: String = "Sahay",
-    val wakeWordEnabled: Boolean = false,
-    val wakeKeyword: String = "computer",
-    val builtinKeywords: List<String> = UserPreferences.BUILTIN_KEYWORDS,
+    val wakeWordEnabled: Boolean = true,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
     val errorKey: String? = null,
@@ -50,7 +48,6 @@ class SettingsViewModel @Inject constructor(
                 it.copy(
                     assistantName = snap.assistantName,
                     wakeWordEnabled = snap.wakeWordEnabled,
-                    wakeKeyword = snap.wakeKeyword,
                 )
             }
         }
@@ -90,14 +87,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setAssistantName(name: String) {
         _state.update { it.copy(assistantName = name) }
-        viewModelScope.launch { prefs.setAssistantName(name) }
-    }
-
-    fun setWakeKeyword(keyword: String) {
-        _state.update { it.copy(wakeKeyword = keyword) }
         viewModelScope.launch {
-            prefs.setWakeKeyword(keyword)
-            // Restart wake service so new keyword takes effect.
+            prefs.setAssistantName(name)
+            // Restart wake service so the new name becomes the wake phrase.
             if (_state.value.wakeWordEnabled) {
                 WakeWordService.stop(context)
                 WakeWordService.start(context)

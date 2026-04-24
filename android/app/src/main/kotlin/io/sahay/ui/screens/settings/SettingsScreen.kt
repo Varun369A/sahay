@@ -12,14 +12,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -65,35 +61,38 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
         )
 
-        // ─── Assistant identity ────────────────────────────────────
+        // ─── Assistant identity + always-listen (unified) ──────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Assistant", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+                Text("Your assistant", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Pick a name. Say the name to activate — that's your wake word.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = state.assistantName,
                     onValueChange = vm::setAssistantName,
                     label = { Text("Name") },
+                    placeholder = { Text("e.g. Sahay, Pluto, Jarvis") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "Used in confirmations, notifications, and (soon) spoken replies.",
+                    "Common English words work best with offline recognition. " +
+                        "Examples: Sahay, Pluto, Jarvis, Alfred, Echo, Nova.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
                 )
-            }
-        }
-
-        // ─── Always-on listening + wake word ───────────────────────
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
+                Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Always-on listening", style = MaterialTheme.typography.titleMedium)
+                        Text("Always listening", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Sahay listens continuously and activates when you say the wake word.",
+                            "Hold Sahay ready 24/7. Say \"${state.assistantName}, …\" anywhere.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -102,23 +101,6 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
                         checked = state.wakeWordEnabled,
                         onCheckedChange = vm::setWakeWordEnabled,
                     )
-                }
-                if (state.wakeWordEnabled) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Wake word: \"${state.wakeKeyword}\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(state.builtinKeywords) { kw ->
-                            FilterChip(
-                                selected = state.wakeKeyword == kw,
-                                onClick = { vm.setWakeKeyword(kw) },
-                                label = { Text(kw) },
-                            )
-                        }
-                    }
                 }
             }
         }

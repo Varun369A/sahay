@@ -30,7 +30,6 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     private object Keys {
         val AssistantName = stringPreferencesKey("assistant_name")
         val WakeWordEnabled = booleanPreferencesKey("wake_word_enabled")
-        val WakeKeyword = stringPreferencesKey("wake_keyword")
         val VoiceLocale = stringPreferencesKey("voice_locale")
     }
 
@@ -38,10 +37,8 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         it[Keys.AssistantName] ?: "Sahay"
     }
     val wakeWordEnabled: Flow<Boolean> = context.dataStore.data.map {
-        it[Keys.WakeWordEnabled] ?: false
-    }
-    val wakeKeyword: Flow<String> = context.dataStore.data.map {
-        it[Keys.WakeKeyword] ?: "computer"
+        // Default to ON — user spoke the name, the app listens.
+        it[Keys.WakeWordEnabled] ?: true
     }
     val voiceLocale: Flow<String> = context.dataStore.data.map {
         it[Keys.VoiceLocale] ?: "en-IN"
@@ -53,9 +50,6 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     suspend fun setWakeWordEnabled(value: Boolean) = context.dataStore.edit {
         it[Keys.WakeWordEnabled] = value
     }
-    suspend fun setWakeKeyword(value: String) = context.dataStore.edit {
-        it[Keys.WakeKeyword] = value
-    }
     suspend fun setVoiceLocale(value: String) = context.dataStore.edit {
         it[Keys.VoiceLocale] = value
     }
@@ -64,8 +58,7 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val data = context.dataStore.data.first()
         return Snapshot(
             assistantName = data[Keys.AssistantName] ?: "Sahay",
-            wakeWordEnabled = data[Keys.WakeWordEnabled] ?: false,
-            wakeKeyword = data[Keys.WakeKeyword] ?: "computer",
+            wakeWordEnabled = data[Keys.WakeWordEnabled] ?: true,
             voiceLocale = data[Keys.VoiceLocale] ?: "en-IN",
         )
     }
@@ -73,16 +66,6 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     data class Snapshot(
         val assistantName: String,
         val wakeWordEnabled: Boolean,
-        val wakeKeyword: String,
         val voiceLocale: String,
     )
-
-    companion object {
-        /** Picovoice built-in keywords (free tier). User can pick any of these. */
-        val BUILTIN_KEYWORDS = listOf(
-            "computer", "jarvis", "alexa", "americano", "blueberry", "bumblebee",
-            "grapefruit", "grasshopper", "hey google", "hey siri", "ok google",
-            "picovoice", "porcupine", "terminator",
-        )
-    }
 }
