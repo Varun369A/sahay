@@ -1,6 +1,9 @@
 package io.sahay.voice
 
+import android.util.Log
 import io.sahay.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -16,7 +19,7 @@ import javax.inject.Singleton
  * Speech-to-text via Sarvam Speech API.
  * Strong on Indic languages (Tamil, Hindi, etc.).
  *
- * Audio in: WAV/PCM file path. Output: text + detected language code.
+ * All work happens on Dispatchers.IO. Caller can invoke from any context.
  */
 @Singleton
 class SarvamSttClient @Inject constructor() {
@@ -26,16 +29,21 @@ class SarvamSttClient @Inject constructor() {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    suspend fun transcribe(wavFile: File, languageHint: String? = null): TranscriptionResult {
+    suspend fun transcribe(
+        wavFile: File,
+        languageHint: String? = null,
+    ): TranscriptionResult = withContext(Dispatchers.IO) {
         if (BuildConfig.SARVAM_API_KEY.isBlank()) {
-            return TranscriptionResult(text = "", language = "unknown", error = "missing_sarvam_key")
+            return@withContext TranscriptionResult(
+                text = "", language = "unknown", error = "missing_sarvam_key",
+            )
         }
 
         val mediaType = "audio/wav".toMediaType()
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart("file", wavFile.name, wavFile.asRequestBody(mediaType))
-            .addFormDataPart("model", "saarika:v2")
+            .addFormDataPart("file", wavFile.name, wavFile.readBytes().toRequestBody(mediaType))
+            .addFormDataPart("model", "saarika:v2.5")
             .also { if (!languageHint.isNullOrBlank()) it.addFormDataPart("language_code", languageHint) }
             .build()
 
@@ -45,30 +53,43 @@ class SarvamSttClient @Inject constructor() {
             .post(multipart)
             .build()
 
-        return runCatching {
+        try {
             client.newCall(req).execute().use { resp ->
                 val bodyStr = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) {
-                    return TranscriptionResult(text = "", language = "unknown", error = "http_${resp.code}")
+                    Log.w(TAG, "sarvam http ${resp.code}: $bodyStr")
+                    return@withContext TranscriptionResult(
+                        text = "",
+                        language = "unknown",
+                        error = "http_${resp.code}:${bodyStr.take(120)}",
+                    )
                 }
                 val json = JSONObject(bodyStr)
                 val text = json.optString("transcript", "")
                 val lang = json.optString("language_code", languageHint ?: "en-IN")
+                Log.i(TAG, "sarvam ok lang=$lang chars=${text.length}")
                 TranscriptionResult(text = text, language = lang)
             }
-        }.getOrElse {
-            TranscriptionResult(text = "", language = "unknown", error = it.message ?: "unknown_error")
+        } catch (t: Throwable) {
+            Log.e(TAG, "sarvam call failed", t)
+            TranscriptionResult(
+                text = "",
+                language = "unknown",
+                error = "exception:${t::class.simpleName}:${t.message ?: "no_message"}",
+            )
         }
     }
 
-    private fun File.asRequestBody(type: okhttp3.MediaType) =
-        readBytes().toRequestBody(type)
-
-    data class TranscriptionResult(val text: String, val language: String, val error: String? = null) {
+    data class TranscriptionResult(
+        val text: String,
+        val language: String,
+        val error: String? = null,
+    ) {
         val ok: Boolean get() = error == null && text.isNotBlank()
     }
 
     private companion object {
         const val SARVAM_URL = "https://api.sarvam.ai/speech-to-text"
+        const val TAG = "SarvamStt"
     }
 }
