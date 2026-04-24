@@ -24,7 +24,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.sahay.R
-import io.sahay.ui.screens.permissions.PermissionsScreen
 
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
@@ -33,7 +32,6 @@ fun AuthScreen(viewModel: AuthViewModel) {
     when (state.step) {
         AuthState.Step.EmailEntry -> EmailStep(state, viewModel)
         AuthState.Step.OtpEntry -> OtpStep(state, viewModel)
-        AuthState.Step.Permissions -> PermissionsScreen(onDone = viewModel::completeOnboarding)
     }
 }
 

@@ -21,7 +21,7 @@ data class AuthState(
     val errorKey: String? = null,
     val isAuthenticated: Boolean = false,
 ) {
-    enum class Step { EmailEntry, OtpEntry, Permissions }
+    enum class Step { EmailEntry, OtpEntry }
 }
 
 @HiltViewModel
@@ -29,14 +29,14 @@ class AuthViewModel @Inject constructor(
     private val repo: AuthRepository,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(
-        AuthState(isAuthenticated = repo.isAuthenticated, step = if (repo.isAuthenticated) AuthState.Step.Permissions else AuthState.Step.EmailEntry)
-    )
+    private val _state = MutableStateFlow(AuthState(isAuthenticated = repo.isAuthenticated))
     val state: StateFlow<AuthState> = _state.asStateFlow()
 
     fun onEmailChange(value: String) = _state.update { it.copy(email = value, errorKey = null) }
     fun onLocaleChange(value: String) = _state.update { it.copy(locale = value) }
-    fun onCodeChange(value: String) = _state.update { it.copy(code = value.filter { c -> c.isDigit() }.take(6), errorKey = null) }
+    fun onCodeChange(value: String) = _state.update {
+        it.copy(code = value.filter { c -> c.isDigit() }.take(6), errorKey = null)
+    }
 
     fun requestOtp(asLogin: Boolean = false) {
         val email = _state.value.email.trim().lowercase()
@@ -68,9 +68,7 @@ class AuthViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, errorKey = null) }
             runCatching { repo.verifyOtp(s.email.trim().lowercase(), s.code, s.purpose) }
                 .onSuccess {
-                    _state.update {
-                        it.copy(isLoading = false, isAuthenticated = true, step = AuthState.Step.Permissions)
-                    }
+                    _state.update { it.copy(isLoading = false, isAuthenticated = true) }
                 }
                 .onFailure { t ->
                     _state.update { it.copy(isLoading = false, errorKey = "verify_failed:${t.message ?: ""}") }
@@ -80,10 +78,6 @@ class AuthViewModel @Inject constructor(
 
     fun back() {
         _state.update { it.copy(step = AuthState.Step.EmailEntry, code = "", errorKey = null) }
-    }
-
-    fun completeOnboarding() {
-        _state.update { it.copy(isAuthenticated = true) }
     }
 
     fun logout() {

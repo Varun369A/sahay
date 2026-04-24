@@ -12,11 +12,19 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,15 +33,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.sahay.R
+import io.sahay.service.SahayAccessibilityService
 import io.sahay.ui.screens.auth.AuthScreen
 import io.sahay.ui.screens.auth.AuthViewModel
 import io.sahay.ui.screens.files.FilesScreen
 import io.sahay.ui.screens.home.HomeScreen
 import io.sahay.ui.screens.logs.LogsScreen
+import io.sahay.ui.screens.permissions.PermissionsScreen
 import io.sahay.ui.screens.settings.SettingsScreen
+import io.sahay.util.Permissions
 
 sealed class Route(val path: String) {
-    data object Auth : Route("auth")
     data object Home : Route("home")
     data object Logs : Route("logs")
     data object Files : Route("files")
@@ -49,18 +59,49 @@ private val Tabs = listOf(
     TabSpec(Route.Settings, R.string.tab_settings, Icons.Default.Settings),
 )
 
+/**
+ * App-wide gate. Three states (in order):
+ *   1. Not authenticated  → AuthScreen (email + OTP)
+ *   2. Authenticated but missing permissions → PermissionsScreen
+ *   3. Authenticated AND all permissions granted → main NavHost
+ *
+ * The permission check happens on every onResume, so when the user comes
+ * back from the system Accessibility settings, we automatically advance.
+ */
 @Composable
 fun SahayApp() {
     val authVm: AuthViewModel = hiltViewModel()
     val authState by authVm.state.collectAsStateWithLifecycle()
 
-    val navController = rememberNavController()
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    if (!authState.isAuthenticated) {
-        AuthScreen(viewModel = authVm)
-        return
+    val a11yServiceFqcn = SahayAccessibilityService::class.java.name
+
+    var permsGranted by remember {
+        mutableStateOf(Permissions.allGranted(context, a11yServiceFqcn))
     }
 
+    DisposableEffect(lifecycle) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permsGranted = Permissions.allGranted(context, a11yServiceFqcn)
+            }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
+
+    when {
+        !authState.isAuthenticated -> AuthScreen(viewModel = authVm)
+        !permsGranted -> PermissionsScreen(onAllGranted = { permsGranted = true })
+        else -> MainShell(onLoggedOut = { authVm.logout() })
+    }
+}
+
+@Composable
+private fun MainShell(onLoggedOut: () -> Unit) {
+    val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
@@ -95,9 +136,8 @@ fun SahayApp() {
             composable(Route.Logs.path) { LogsScreen() }
             composable(Route.Files.path) { FilesScreen() }
             composable(Route.Settings.path) {
-                SettingsScreen(onLoggedOut = { authVm.logout() })
+                SettingsScreen(onLoggedOut = onLoggedOut)
             }
         }
     }
 }
-
