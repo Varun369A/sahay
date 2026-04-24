@@ -8,10 +8,12 @@ Notes:
 
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sahay.config import get_settings
 from sahay.db.models import User
 from sahay.db.session import get_db_session
 from sahay.deps import client_ip, current_user
@@ -33,6 +35,56 @@ from sahay.util.logging import get_logger
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 log = get_logger(__name__)
+_settings = get_settings()
+
+
+async def _deliver_otp_or_raise(
+    *, to_email: str, code: str, purpose: str, locale: str,
+) -> None:
+    """Send the OTP email, turning provider failures into actionable HTTP
+    errors instead of opaque 500s.
+
+    The OTP is ALREADY persisted by the caller before this runs, so we
+    want the user (and devs reading logs) to know exactly what went wrong:
+    — 4xx from Resend (bad sender domain, invalid recipient) → 502 with
+      `email_delivery_failed` so the client can show a real message.
+    — 5xx / network errors after retries → 502 same code.
+
+    In non-production we ALSO print the OTP to the structured log at
+    WARN level so you can still sign in when Resend isn't yet configured.
+    """
+    try:
+        await send_otp_email(
+            to_email=to_email, code=code, purpose=purpose, locale=locale,
+        )
+    except httpx.HTTPStatusError as e:
+        # Resend's JSON error tells us WHY — surface it in logs.
+        detail = ""
+        try:
+            detail = e.response.json().get("message", "")[:200]
+        except Exception:                                        # noqa: BLE001
+            detail = (e.response.text or "")[:200]
+        log.error(
+            "otp_email_send_failed_http",
+            status=e.response.status_code, provider_msg=detail,
+            purpose=purpose,
+        )
+        if not _settings.is_production:
+            log.warning("otp_dev_code", email=to_email, code=code,
+                        reason="email-send-failed; use this OTP to proceed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="email_delivery_failed",
+        ) from e
+    except Exception as e:                                       # noqa: BLE001
+        log.exception("otp_email_send_failed", purpose=purpose)
+        if not _settings.is_production:
+            log.warning("otp_dev_code", email=to_email, code=code,
+                        reason="email-send-exception; use this OTP to proceed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="email_delivery_failed",
+        ) from e
 
 
 # ─── Signup ──────────────────────────────────────────────────────────
@@ -57,11 +109,8 @@ async def signup(
     code = await otp_service.issue_otp(
         db, body.email, "signup", requested_ip=client_ip(request)
     )
-    await send_otp_email(
-        to_email=body.email,
-        code=code,
-        purpose="signup",
-        locale=body.locale,
+    await _deliver_otp_or_raise(
+        to_email=body.email, code=code, purpose="signup", locale=body.locale,
     )
     log.info("signup_otp_sent", email_domain=body.email.split("@")[-1])
     return OtpSentResponse()
@@ -91,11 +140,8 @@ async def login(
     code = await otp_service.issue_otp(
         db, body.email, "login", requested_ip=client_ip(request)
     )
-    await send_otp_email(
-        to_email=body.email,
-        code=code,
-        purpose="login",
-        locale=locale,
+    await _deliver_otp_or_raise(
+        to_email=body.email, code=code, purpose="login", locale=locale,
     )
     log.info("login_otp_sent", email_domain=body.email.split("@")[-1])
     return OtpSentResponse()
