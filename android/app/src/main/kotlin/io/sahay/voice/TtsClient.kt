@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -30,10 +31,16 @@ import kotlinx.coroutines.withTimeoutOrNull
  * API here stays the same.
  */
 @Singleton
-class TtsClient @Inject constructor(@ApplicationContext private val context: Context) {
+class TtsClient @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val remote: RemoteTtsPlayer,
+) {
 
     private val ready = AtomicBoolean(false)
     private var engine: TextToSpeech? = null
+    private val remoteScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
 
     fun init(locale: Locale = Locale("en", "IN")) {
         if (engine != null) return
@@ -52,14 +59,34 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
         }
     }
 
-    /** Speak and suspend until playback completes (or 10s elapse). */
+    /**
+     * Speak and suspend until playback completes (or 15s elapse).
+     *
+     * Tries ElevenLabs first. If remote fails (no key, budget exhausted,
+     * network), falls back to on-device Android TTS. Either way the
+     * suspension resumes only once audio actually finishes.
+     */
     suspend fun speak(text: String): Boolean {
         if (text.isBlank()) return false
-        val e = engine ?: run { init(); return false }      // first call primes engine
+
+        // Try remote first — returns false fast if backend is 503 / 402.
+        val remoteOk = runCatching { remote.speak(text) }.getOrDefault(false)
+        if (remoteOk) {
+            // Remote kicks off MediaPlayer; wait for it to stop.
+            // Poll every 100 ms up to 15s — cheap and cancel-safe.
+            val deadline = System.currentTimeMillis() + 15_000L
+            while (remote.isPlaying && System.currentTimeMillis() < deadline) {
+                kotlinx.coroutines.delay(100)
+            }
+            return true
+        }
+
+        // ── Local fallback ──
+        val e = engine ?: run { init(); return false }
         if (!ready.get()) return false
 
         val id = "sahay_${System.currentTimeMillis()}"
-        val completed = withTimeoutOrNull(10_000) {
+        val completed = withTimeoutOrNull(15_000) {
             suspendCancellableCoroutine<Boolean> { cont ->
                 e.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
@@ -82,9 +109,13 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
     }
 
     /**
-     * Fire-and-forget announcement. Used by the notification listener when
-     * a high-priority message arrives. Returns immediately — we don't want
-     * to block the listener's coroutine on full playback.
+     * Fire-and-forget announcement. Prefers ElevenLabs (streamed via our
+     * backend proxy) for a calm human voice; falls back to on-device
+     * Android TTS if the remote call fails, 503s (key not set), 402s
+     * (char budget exhausted), or returns no audio.
+     *
+     * Returns immediately — we don't want to block the listener's
+     * coroutine on full playback.
      *
      * @param whisper When true, speak at reduced volume (~30%) — intended
      *                for Quiet Hours where the user still wants to hear
@@ -92,16 +123,39 @@ class TtsClient @Inject constructor(@ApplicationContext private val context: Con
      */
     fun announce(text: String, whisper: Boolean = false): Boolean {
         if (text.isBlank()) return false
-        val e = engine ?: run { init(); return false }
-        if (!ready.get()) return false
+
+        // Try the premium path first — silently fall back to Android TTS
+        // on any failure. Either way we return true immediately (caller
+        // expects fire-and-forget).
+        remoteScope.launch {
+            val ok = runCatching { remote.speak(text, whisper = whisper) }.getOrDefault(false)
+            if (!ok) {
+                speakLocal(text, whisper)
+            }
+        }
+        return true
+    }
+
+    /**
+     * Stop any active playback — used for barge-in (user says the wake
+     * word while Sahay is talking). Stops BOTH remote MP3 playback and
+     * any queued Android TTS utterances.
+     */
+    fun stopSpeaking() {
+        runCatching { remote.stop() }
+        runCatching { engine?.stop() }
+    }
+
+    private fun speakLocal(text: String, whisper: Boolean) {
+        val e = engine ?: run { init(); return }
+        if (!ready.get()) return
 
         val params = Bundle().apply {
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, if (whisper) VOLUME_WHISPER else VOLUME_NORMAL)
             putFloat(TextToSpeech.Engine.KEY_PARAM_PAN, 0f)
         }
-        val id = "announce_${System.currentTimeMillis()}"
-        val rc = e.speak(text, TextToSpeech.QUEUE_ADD, params, id)
-        return rc == TextToSpeech.SUCCESS
+        val id = "announce_local_${System.currentTimeMillis()}"
+        e.speak(text, TextToSpeech.QUEUE_ADD, params, id)
     }
 
     fun shutdown() {

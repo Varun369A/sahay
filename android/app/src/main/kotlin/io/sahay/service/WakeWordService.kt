@@ -65,6 +65,7 @@ class WakeWordService : Service() {
     @Inject lateinit var recorder: AudioRecorder
     @Inject lateinit var stt: SarvamSttClient
     @Inject lateinit var voskModel: VoskModelManager
+    @Inject lateinit var tts: io.sahay.voice.TtsClient
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
@@ -193,6 +194,10 @@ class WakeWordService : Service() {
     private fun triggerCapture() {
         if (awake) return
         awake = true
+        // Barge-in: if Sahay is talking when the user says the wake word,
+        // shut up immediately so the user isn't talking over themself.
+        // Cheap, reliable — the wake word is always the interrupt signal.
+        runCatching { tts.stopSpeaking() }
         captureJob?.cancel()
         captureJob = scope.launch {
             try {

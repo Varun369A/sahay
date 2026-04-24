@@ -35,6 +35,7 @@ from sahay.routers import (
     memory,
     notifications,
     playbooks,
+    tts,
     users,
 )
 from sahay.util.logging import configure_logging, get_logger
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router)
     app.include_router(documents.router)
     app.include_router(briefing.router)
+    app.include_router(tts.router)
 
     # Global error handler — never leak stack traces in production.
     @app.exception_handler(Exception)

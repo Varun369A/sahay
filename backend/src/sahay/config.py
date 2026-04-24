@@ -72,6 +72,23 @@ class Settings(BaseSettings):
     # ─── Sarvam ──────────────────────────────────────────────────────
     sarvam_api_key: SecretStr | None = None  # primarily used by Android client
 
+    # ─── ElevenLabs (premium TTS) ────────────────────────────────────
+    # When unset, server returns 503 on /v1/tts/speak and the client
+    # falls back to on-device Android TTS. Free during preview; charge
+    # Pro tier users once billing is live.
+    elevenlabs_api_key: SecretStr | None = None
+    # Charlotte — soft, clear, works well with Indian English.
+    # Browse alternatives at https://elevenlabs.io/app/voice-lab
+    elevenlabs_default_voice_id: str = "XB0fDUnXU5powFXDhCwa"
+    # Turbo v2.5 — ~250ms time-to-first-byte. Sweet spot for conversational UX.
+    # Swap to eleven_multilingual_v2 for Hindi / Tamil / code-switching.
+    elevenlabs_default_model_id: str = "eleven_turbo_v2_5"
+    # Per-user monthly hard cap in characters. Free tier = low; Pro tier
+    # is bumped by the tier-resolver elsewhere. Defensive default so a
+    # runaway loop can't bankrupt the account.
+    elevenlabs_monthly_char_budget_free: int = 3_000
+    elevenlabs_monthly_char_budget_pro: int = 60_000
+
     # ─── Sentry ──────────────────────────────────────────────────────
     sentry_dsn: str | None = None
 
