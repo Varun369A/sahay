@@ -71,8 +71,11 @@ class ActionRunner @Inject constructor(
 
         val started = System.currentTimeMillis()
         for (step in plan.steps) {
-            // Per-step confirmation (always required for destructive; optional for low-reliability).
-            if (step.confirmRequired || plan.needsPerStepConfirm) {
+            // Only confirm steps the playbook itself flagged as destructive
+            // (Send / Post / Save / Pay-style). Earlier blanket rule on
+            // low-reliability is gone — it was causing N confirmations per
+            // task, killing UX. Reliability scoring still applies elsewhere.
+            if (step.confirmRequired) {
                 val approved = ConfirmationActivity.requestApproval(context, step)
                 if (!approved) {
                     log(appPackage, intent, "aborted", System.currentTimeMillis() - started, userAborted = true)
