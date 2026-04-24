@@ -58,9 +58,14 @@ class HomeViewModel @Inject constructor(
             }
             _state.update { it.copy(transcript = transcription.text) }
 
-            val parsed = parser.parse(transcription.text)
+            val parsed = parser.parse(transcription.text, locale = transcription.language)
             if (parsed == null) {
-                _state.update { it.copy(mode = HomeState.Mode.Idle, errorKey = "intent_unrecognized") }
+                _state.update {
+                    it.copy(
+                        mode = HomeState.Mode.Idle,
+                        errorKey = "I couldn't match that to a known action. Try: 'play X on Netflix', 'send WhatsApp to Y saying Z'.",
+                    )
+                }
                 return@launch
             }
 

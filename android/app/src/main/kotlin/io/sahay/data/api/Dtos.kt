@@ -107,6 +107,22 @@ data class PlanResponse(
 )
 
 @Serializable
+data class DispatchRequest(
+    val utterance: String,
+    val locale: String = "en",
+)
+
+@Serializable
+data class DispatchResponse(
+    val matched: Boolean,
+    @SerialName("app_package") val appPackage: String? = null,
+    val intent: String? = null,
+    val inputs: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val confidence: Double = 0.0,
+    val notes: String? = null,
+)
+
+@Serializable
 data class ActionLogRequest(
     @SerialName("app_package") val appPackage: String,
     val intent: String,

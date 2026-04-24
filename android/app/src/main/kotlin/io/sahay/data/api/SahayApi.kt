@@ -53,6 +53,9 @@ interface SahayApi {
     @POST("/v1/actions/plan")
     suspend fun planAction(@Body body: PlanRequest): PlanResponse
 
+    @POST("/v1/actions/dispatch")
+    suspend fun dispatchUtterance(@Body body: DispatchRequest): DispatchResponse
+
     @POST("/v1/actions/log")
     suspend fun logAction(@Body body: ActionLogRequest)
 

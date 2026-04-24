@@ -46,6 +46,20 @@ class ActionLogRequest(BaseModel):
     user_aborted: bool = False
 
 
+class DispatchRequest(BaseModel):
+    utterance: str = Field(min_length=1, max_length=2000)
+    locale: str = Field(default="en", min_length=2, max_length=8)
+
+
+class DispatchResponse(BaseModel):
+    matched: bool
+    app_package: str | None = None
+    intent: str | None = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = 0.0
+    notes: str | None = None
+
+
 class UsageOut(BaseModel):
     daily_count: int
     daily_limit: int

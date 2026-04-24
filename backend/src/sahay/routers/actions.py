@@ -11,12 +11,14 @@ from sahay.deps import current_user
 from sahay.domain.payment_blocklist import is_payment_app
 from sahay.schemas.action import (
     ActionLogRequest,
+    DispatchRequest,
+    DispatchResponse,
     PlanRequest,
     PlanResponse,
     PlannedStepOut,
     UsageOut,
 )
-from sahay.services import action_planner, usage_meter
+from sahay.services import action_planner, intent_dispatcher, usage_meter
 from sahay.services.rate_limiter import rate_limit
 from sahay.util.logging import get_logger
 
@@ -84,6 +86,28 @@ async def plan_action(
         needs_per_step_confirm=plan.needs_per_step_confirm,
         requires_inputs=plan.requires_inputs,
         notes=plan.notes,
+    )
+
+
+@router.post(
+    "/dispatch",
+    response_model=DispatchResponse,
+    dependencies=[Depends(rate_limit("dispatch", per_minute=120))],
+)
+async def dispatch_intent(
+    body: DispatchRequest,
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(current_user),
+) -> DispatchResponse:
+    """Voice utterance → structured intent. Claude Haiku-powered, language-agnostic."""
+    result = await intent_dispatcher.dispatch(db, body.utterance, body.locale)
+    return DispatchResponse(
+        matched=result.matched,
+        app_package=result.app_package,
+        intent=result.intent,
+        inputs=result.inputs or {},
+        confidence=result.confidence,
+        notes=result.notes,
     )
 
 
