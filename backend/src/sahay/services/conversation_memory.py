@@ -140,7 +140,38 @@ class ConversationMemory:
         pipe = r.pipeline()
         pipe.delete(self._key(user_id, conversation_id))
         pipe.delete(self._meta(user_id, conversation_id))
+        pipe.delete(self._plan_key(user_id, conversation_id))
         await pipe.execute()
+
+    # ─── Plan persistence (plan-first execution) ─────────────────────
+
+    PLAN_FMT = "convmem_plan:{user_id}:{conversation_id}"
+
+    def _plan_key(self, user_id: str, conversation_id: str) -> str:
+        return self.PLAN_FMT.format(user_id=user_id, conversation_id=conversation_id)
+
+    async def set_plan(
+        self, user_id: str, conversation_id: str, plan_dict: dict[str, Any],
+    ) -> None:
+        """Persist a plan for the session (survives agent-step reboots)."""
+        r = self._redis or get_redis()
+        await r.set(
+            self._plan_key(user_id, conversation_id),
+            json.dumps(plan_dict),
+            ex=self.TTL_SECONDS,
+        )
+
+    async def get_plan(
+        self, user_id: str, conversation_id: str,
+    ) -> dict[str, Any] | None:
+        r = self._redis or get_redis()
+        raw = await r.get(self._plan_key(user_id, conversation_id))
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
 
     async def active_count(self, user_id: str) -> int:
         """Rough count of active conversations for a user (Redis scan)."""

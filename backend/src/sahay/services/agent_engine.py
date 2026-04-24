@@ -35,6 +35,10 @@ from sahay.services.conversation_memory import (
 )
 from sahay.services.firewall import get_firewall
 from sahay.services import memory_service
+from sahay.services.planner import (
+    Plan, format_for_prompt as format_plan_for_prompt,
+    generate_plan, mark_step_progress, should_replan,
+)
 from sahay.util.logging import get_logger
 
 settings = get_settings()
@@ -375,10 +379,12 @@ def _build_user_content(
     scrubbed_tree: str,
     memory_block: str,
     ltm_block: str = "(no stored memories yet)",
+    plan_block: str = "(no plan — proceed step-by-step)",
 ) -> list[dict[str, Any]]:
     """Multimodal content blocks for Anthropic messages API.
 
     `scrubbed_*` inputs have PII replaced by tokens.
+    `plan_block`    = the Opus-authored plan for this conversation (star pattern).
     `memory_block`  = rendered conversation history (this session).
     `ltm_block`     = long-term facts about the user (all sessions).
     """
@@ -388,6 +394,7 @@ def _build_user_content(
         f"GOAL:\n{scrubbed_goal}\n\n"
         f"Current foreground app: {obs.app_package or 'unknown'}\n"
         f"Screen dimensions: {obs.screen_width}x{obs.screen_height}\n\n"
+        f"CURRENT PLAN (follow this — one step at a time):\n{plan_block}\n\n"
         f"WHAT YOU KNOW ABOUT THIS USER (long-term memory):\n{ltm_block}\n\n"
         f"THIS CONVERSATION SO FAR (short-term):\n{memory_block}\n\n"
         f"CURRENT ACCESSIBILITY TREE (PII tokenised):\n"
@@ -453,6 +460,58 @@ def _cost_paise(model: str, usage: Any) -> int:
 
 PAYMENT_KEYWORDS = ("gpay", "phonepe", "paytm", "upi", "bank", "bhim", "cred",
                     "wallet", "netbanking", "imps", "neft", "rtgs")
+
+
+# ─── Plan loader ─────────────────────────────────────────────────────
+
+
+async def _load_or_generate_plan(
+    *,
+    user_id: str,
+    conversation_id: str,
+    goal: str,
+    assistant_name: str,
+    ltm_block: str,
+    step_index: int,
+) -> Plan | None:
+    """Return the active plan for this conversation, generating one if needed.
+
+    Rules:
+      • step 0 OR no cached plan → call Opus to generate a fresh plan
+      • cached plan hit → return it
+      • Opus failure → degenerate plan (single generic step) is still returned
+        so execution falls through to pure Haiku step-by-step without crashing
+
+    Caller is expected to later call `mark_step_progress` + re-persist so the
+    plan stays in sync with reality.
+    """
+    memory = get_conversation_memory()
+
+    # Try cache first — avoids Opus call on every turn.
+    cached = await memory.get_plan(user_id, conversation_id)
+    if cached is not None and step_index > 0:
+        try:
+            return Plan.from_dict(cached)
+        except (KeyError, ValueError, TypeError) as e:
+            log.warning("plan_cache_corrupt", err=str(e))
+
+    # Fresh plan needed.
+    try:
+        plan = await generate_plan(
+            goal=goal,
+            assistant_name=assistant_name,
+            ltm_block=ltm_block,
+        )
+    except Exception as e:                                   # noqa: BLE001
+        log.exception("plan_generate_failed", err=str(e))
+        return None
+
+    try:
+        await memory.set_plan(user_id, conversation_id, plan.to_dict())
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("plan_persist_failed", err=str(e))
+
+    return plan
 
 
 async def step(
@@ -525,6 +584,17 @@ async def step(
         except Exception as e:                               # noqa: BLE001
             log.warning("ltm_load_failed", err=str(e))
 
+    # ── Plan-first: generate/load plan ──
+    plan = await _load_or_generate_plan(
+        user_id=user_id,
+        conversation_id=obs.conversation_id,
+        goal=obs.goal,
+        assistant_name=obs.assistant_name,
+        ltm_block=ltm_block,
+        step_index=obs.step_index,
+    )
+    plan_block = format_plan_for_prompt(plan) if plan else "(no plan — proceed step-by-step)"
+
     # ── Model selection ──
     model = _select_model(obs)
     client = _get_client()
@@ -547,6 +617,7 @@ async def step(
                 scrubbed_tree=gate.scrubbed_tree,
                 memory_block=conv_block,
                 ltm_block=ltm_block,
+                plan_block=plan_block,
             ),
         }],
         max_tokens=512,
@@ -601,6 +672,31 @@ async def step(
             action.message = await fw.scrubber.restore(
                 action.message, obs.conversation_id
             )
+
+    # ── Advance plan progress + persist (for next turn's prompt) ──
+    if plan is not None:
+        mark_step_progress(plan, action.tool, "dispatched")
+        try:
+            if should_replan(plan):
+                log.info(
+                    "replan_triggered",
+                    conversation_id=obs.conversation_id,
+                    failed_count=plan.failed_step_count,
+                )
+                new_plan = await generate_plan(
+                    goal=obs.goal,
+                    assistant_name=obs.assistant_name,
+                    ltm_block=ltm_block,
+                )
+                await memory.set_plan(
+                    user_id, obs.conversation_id, new_plan.to_dict(),
+                )
+            else:
+                await memory.set_plan(
+                    user_id, obs.conversation_id, plan.to_dict(),
+                )
+        except Exception as e:                               # noqa: BLE001
+            log.warning("plan_update_failed", err=str(e))
 
     # ── Record turn in conversation memory ──
     await memory.append_turn(
