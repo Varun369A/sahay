@@ -15,8 +15,11 @@ import javax.inject.Singleton
 class AppRepository @Inject constructor(private val api: SahayApi) {
 
     suspend fun me(): MeResponse = api.me()
-    suspend fun updateMe(displayName: String?, locale: String?): MeResponse =
-        api.updateMe(UpdateMeRequest(displayName, locale))
+    suspend fun updateMe(
+        displayName: String? = null,
+        locale: String? = null,
+        role: String? = null,
+    ): MeResponse = api.updateMe(UpdateMeRequest(displayName, locale, role))
     suspend fun deleteMyData() = api.deleteMyData()
 
     suspend fun listGrants(): List<AppGrantOut> = api.listGrants()

@@ -49,6 +49,7 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(100))
     locale: Mapped[str] = mapped_column(String(8), default="en", nullable=False)
     tier: Mapped[str] = mapped_column(String(16), default="free", nullable=False)
+    role: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[created_at]
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

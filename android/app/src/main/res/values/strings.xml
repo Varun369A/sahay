@@ -23,6 +23,10 @@
     <string name="settings_quiet_whisper">Whisper during Quiet Hours</string>
     <string name="settings_quiet_whisper_body">Speak at low volume instead of being silent.</string>
 
+    <!-- Role picker -->
+    <string name="settings_role_title">What do you do?</string>
+    <string name="settings_role_body">Sahay tailors its tone, examples, and document templates to your role. Change anytime.</string>
+
     <!-- Onboarding -->
     <string name="onboarding_title">Welcome to Sahay</string>
     <string name="onboarding_subtitle">Your AI hands. Voice-driven. Privacy-first.</string>

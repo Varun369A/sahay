@@ -33,9 +33,31 @@ data class SettingsState(
     val quietHoursEndMin: Int = 7 * 60,
     val dndImportanceThreshold: Int = 8,
     val quietHoursWhisper: Boolean = true,
+    val role: String? = null,
     val isLoading: Boolean = false,
     val deleted: Boolean = false,
     val errorKey: String? = null,
+)
+
+/**
+ * Roles the user can pick. Must stay in sync with `ROLE_VALUES` in
+ * `backend/src/sahay/schemas/user.py`. Ordered to put the most common
+ * picks (in our target market) at the front so the horizontal-scroll
+ * chip row feels immediate.
+ */
+val SAHAY_ROLES: List<Pair<String, String>> = listOf(
+    "student" to "Student",
+    "engineer" to "Engineer",
+    "founder" to "Founder",
+    "manager" to "Manager",
+    "sales" to "Sales",
+    "designer" to "Designer",
+    "doctor" to "Doctor",
+    "teacher" to "Teacher",
+    "writer" to "Writer",
+    "lawyer" to "Lawyer",
+    "researcher" to "Researcher",
+    "other" to "Other",
 )
 
 @HiltViewModel
@@ -88,7 +110,12 @@ class SettingsViewModel @Inject constructor(
                 val grants = runCatching { repo.listGrants() }.getOrDefault(emptyList())
                 Triple(me, usage, grants)
             }.onSuccess { (me, usage, grants) ->
-                _state.update { it.copy(isLoading = false, me = me, usage = usage, grants = grants) }
+                _state.update {
+                    it.copy(
+                        isLoading = false, me = me, usage = usage, grants = grants,
+                        role = me.role,
+                    )
+                }
             }.onFailure { t ->
                 _state.update { it.copy(isLoading = false, errorKey = t.message) }
             }
@@ -163,6 +190,19 @@ class SettingsViewModel @Inject constructor(
     fun setQuietHoursWhisper(value: Boolean) {
         _state.update { it.copy(quietHoursWhisper = value) }
         viewModelScope.launch { prefs.setQuietHoursWhisper(value) }
+    }
+
+    fun setRole(roleKey: String) {
+        // Optimistic local update so the selected chip flips immediately;
+        // revert on server failure so the UI never lies.
+        val previous = _state.value.role
+        _state.update { it.copy(role = roleKey) }
+        viewModelScope.launch {
+            runCatching { repo.updateMe(role = roleKey) }
+                .onFailure { t ->
+                    _state.update { it.copy(role = previous, errorKey = t.message) }
+                }
+        }
     }
 
     fun deleteMyData() {

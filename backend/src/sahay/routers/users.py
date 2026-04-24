@@ -19,6 +19,7 @@ from sahay.db.session import get_db_session
 from sahay.deps import current_user
 from sahay.domain.payment_blocklist import is_payment_app
 from sahay.schemas.user import (
+    ROLE_VALUES,
     AppGrantOut,
     DeleteMyDataResponse,
     GrantAppRequest,
@@ -55,6 +56,11 @@ async def update_me(
         user.display_name = body.display_name
     if body.locale is not None:
         user.locale = body.locale
+    if body.role is not None:
+        normalized = body.role.strip().lower()
+        if normalized not in ROLE_VALUES:
+            raise HTTPException(422, "invalid_role")
+        user.role = normalized
     await db.flush()
     return MeResponse.model_validate(user)
 

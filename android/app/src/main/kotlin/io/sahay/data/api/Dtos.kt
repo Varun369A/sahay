@@ -215,6 +215,7 @@ data class MeResponse(
     @SerialName("display_name") val displayName: String?,
     val locale: String,
     val tier: String,
+    val role: String? = null,
     @SerialName("email_verified") val emailVerified: Boolean,
     @SerialName("created_at") val createdAt: String,
     @SerialName("last_active_at") val lastActiveAt: String?,
@@ -224,6 +225,7 @@ data class MeResponse(
 data class UpdateMeRequest(
     @SerialName("display_name") val displayName: String? = null,
     val locale: String? = null,
+    val role: String? = null,
 )
 
 @Serializable
