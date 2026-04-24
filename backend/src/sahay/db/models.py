@@ -331,7 +331,7 @@ class UserMemory(Base):
 
     __tablename__ = "user_memory"
 
-    id: Mapped[UUID] = mapped_column(**uuid_pk)
+    id: Mapped[uuid_pk]
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
     )
@@ -348,8 +348,8 @@ class UserMemory(Base):
     # Source of truth: who set this — "agent" | "user" | "system".
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="agent")
 
-    created_at: Mapped[datetime] = mapped_column(**created_at)
-    updated_at: Mapped[datetime] = mapped_column(**updated_at)
+    created_at: Mapped[created_at]
+    updated_at: Mapped[updated_at]
 
     __table_args__ = (
         UniqueConstraint("user_id", "key", name="uq_user_memory_user_key"),
