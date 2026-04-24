@@ -57,6 +57,14 @@ class AgentLoop @Inject constructor(
 
         tts.init()
 
+        // Push Sahay off-screen so the agent doesn't see our own "Running:"
+        // text and get confused into thinking the prior task is still going.
+        val currentPkg = service.rootInActiveWindow?.packageName?.toString()
+        if (currentPkg == context.packageName) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            delay(600)
+        }
+
         val (sw, sh) = screenSize()
         val history = mutableListOf<JsonObject>()
 
@@ -141,6 +149,7 @@ class AgentLoop @Inject constructor(
         return when (action.tool) {
             "tap_node" -> tapIndexedNode(service, action)
             "type_in_node" -> typeInIndexedNode(service, action)
+            "long_press_node" -> longPressIndexedNode(service, action)
             "tap", "long_press" -> tapOrLongPress(service, action)
             "type" -> typeText(service, action)
             "swipe" -> swipe(service, action)
@@ -176,6 +185,34 @@ class AgentLoop @Inject constructor(
         // Tap the real on-screen center — no guessing.
         val ok = GestureDispatcher.tap(service, node.centerX, node.centerY)
         Log.i(TAG, "tap_node i=$i at (${node.centerX},${node.centerY}) text='${node.text}' cd='${node.contentDescription}' ok=$ok")
+        return ExecResult(if (ok) "ok" else "gesture_rejected", settleMs = 900)
+    }
+
+    private suspend fun longPressIndexedNode(
+        service: AccessibilityService, action: AgentTool,
+    ): ExecResult {
+        val i = action.nodeIndex ?: return ExecResult("missing_node_index")
+        val node = ScreenTreeReader.nodeForIndex(i) ?: return ExecResult("unknown_node:$i")
+        val holdMs = (action.durationMs ?: 1200).toLong().coerceIn(300, 30_000)
+        val path = android.graphics.Path().apply { moveTo(node.centerX.toFloat(), node.centerY.toFloat()) }
+        val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, holdMs)
+        val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+        val ok = kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+            val accepted = service.dispatchGesture(
+                gesture,
+                object : AccessibilityService.GestureResultCallback() {
+                    override fun onCompleted(d: android.accessibilityservice.GestureDescription?) {
+                        if (cont.isActive) cont.resume(true) {}
+                    }
+                    override fun onCancelled(d: android.accessibilityservice.GestureDescription?) {
+                        if (cont.isActive) cont.resume(false) {}
+                    }
+                },
+                null,
+            )
+            if (!accepted && cont.isActive) cont.resume(false) {}
+        }
+        Log.i(TAG, "long_press_node i=$i at (${node.centerX},${node.centerY}) hold=${holdMs}ms ok=$ok")
         return ExecResult(if (ok) "ok" else "gesture_rejected", settleMs = 900)
     }
 

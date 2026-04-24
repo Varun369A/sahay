@@ -109,11 +109,19 @@ fun PermissionsScreen(onAllGranted: () -> Unit) {
         }
     }
 
-    // Auto-advance the moment all three are green.
+    // Auto-advance the moment all three are green — and auto-enable
+    // always-on listening so the user doesn't have to flip a switch.
     LaunchedEffect(micGranted, notifGranted, a11yGranted) {
         if (micGranted && notifGranted && a11yGranted) {
             delay(300)
             onAllGranted()
+        }
+    }
+    // Auto-start wake word service when all perms land (first-time only; the
+    // preference survives reopens so this is idempotent).
+    LaunchedEffect(micGranted, notifGranted, a11yGranted) {
+        if (micGranted && notifGranted && a11yGranted) {
+            io.sahay.service.WakeWordService.start(context)
         }
     }
 

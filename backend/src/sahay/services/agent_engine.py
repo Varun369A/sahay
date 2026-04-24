@@ -90,14 +90,31 @@ _TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "long_press",
-        "description": "Long-press at (x, y) or on a selector.",
+        "name": "long_press_node",
+        "description": "Long-press the indexed node from the tree (preferred). "
+                       "Use for recording voice messages, context menus, drag handles. "
+                       "You can also pass an optional hold_ms for longer holds (e.g. 3000 for "
+                       "a 3-second WhatsApp voice message).",
         "input_schema": {
             "type": "object",
+            "required": ["node_index"],
+            "properties": {
+                "node_index": {"type": "integer"},
+                "duration_ms": {"type": "integer", "default": 1200, "minimum": 300, "maximum": 30000},
+                "reasoning": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "long_press",
+        "description": "Fallback — long-press at (x, y). Prefer long_press_node.",
+        "input_schema": {
+            "type": "object",
+            "required": ["x", "y"],
             "properties": {
                 "x": {"type": "integer"},
                 "y": {"type": "integer"},
-                "selector": {"type": "object"},
+                "duration_ms": {"type": "integer", "default": 1200},
                 "reasoning": {"type": "string"},
             },
         },
