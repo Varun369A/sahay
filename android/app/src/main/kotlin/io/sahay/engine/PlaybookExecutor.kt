@@ -64,10 +64,37 @@ class PlaybookExecutor(
         if (PaymentBlocklist.isBlocked(pkg)) return StepOutcome.Aborted
         val intent = service.packageManager.getLaunchIntentForPackage(pkg)
             ?: return StepOutcome.Failed("app_not_installed:$pkg")
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        // 1. Press HOME first — if Sahay itself (or any other app) is in
+        //    foreground, our subsequent startActivity doesn't reliably bring
+        //    the target app to front on some OEMs. HOME clears the stack.
+        val currentPkg = service.rootInActiveWindow?.packageName?.toString()
+        if (currentPkg != pkg) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            delay(500)
+        }
+
+        // 2. Launch the target app in its own task.
+        intent.addFlags(
+            android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                or android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        )
         service.startActivity(intent)
-        delay(2_500)   // give the app time to come up
-        return StepOutcome.Success
+
+        // 3. Poll until target app is actually the foreground window.
+        //    Up to 10s for cold start (Netflix splash can take 5-8s).
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            val fg = service.rootInActiveWindow?.packageName?.toString()
+            if (fg == pkg) {
+                android.util.Log.i(TAG, "launch_success pkg=$pkg")
+                // Small settle delay for initial UI drawing.
+                delay(800)
+                return StepOutcome.Success
+            }
+            delay(250)
+        }
+        return StepOutcome.Failed("launched_but_not_foregrounded:$pkg")
     }
 
     private suspend fun tapWithFallback(
