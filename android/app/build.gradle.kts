@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -21,12 +23,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        // BuildConfig fields injected from gradle.properties / env (override at build time):
-        //   ./gradlew assembleRelease -PSAHAY_API_BASE=https://api.sahay.app
-        val apiBase = (project.findProperty("SAHAY_API_BASE") as String?) ?: "http://10.0.2.2:8080"
-        val sarvamKey = (project.findProperty("SAHAY_SARVAM_KEY") as String?) ?: ""
+        // BuildConfig fields — read from local.properties first, then -P, then default.
+        //
+        // Set in android/local.properties:
+        //     SAHAY_API_BASE=https://sahay-production-5dbf.up.railway.app
+        //     SAHAY_SARVAM_KEY=sk_xxx
+        val localProps = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) f.inputStream().use { stream -> load(stream) }
+        }
+        fun prop(name: String, default: String): String =
+            (project.findProperty(name) as String?)
+                ?: localProps.getProperty(name)
+                ?: default
+
+        val apiBase = prop("SAHAY_API_BASE", "http://10.0.2.2:8080")
+        val sarvamKey = prop("SAHAY_SARVAM_KEY", "")
         buildConfigField("String", "API_BASE_URL", "\"$apiBase\"")
         buildConfigField("String", "SARVAM_API_KEY", "\"$sarvamKey\"")
+        println("Sahay build → API_BASE_URL=$apiBase")
     }
 
     signingConfigs {
