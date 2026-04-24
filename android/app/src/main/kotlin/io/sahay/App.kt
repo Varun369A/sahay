@@ -3,8 +3,12 @@ package io.sahay
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
+import android.content.IntentFilter
 import android.os.Build
 import dagger.hilt.android.HiltAndroidApp
+import io.sahay.BuildConfig
+import io.sahay.service.DebugDumpReceiver
 
 @HiltAndroidApp
 class App : Application() {
@@ -12,6 +16,18 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        if (BuildConfig.DEBUG) {
+            // Allow `adb shell am broadcast -a io.sahay.debug.DUMP_TREE`
+            // to dump the live accessibility tree to external files dir.
+            val receiver = DebugDumpReceiver()
+            val filter = IntentFilter(DebugDumpReceiver.ACTION_DUMP)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(receiver, filter)
+            }
+        }
     }
 
     private fun createNotificationChannels() {

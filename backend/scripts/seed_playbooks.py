@@ -194,60 +194,93 @@ PLAYBOOKS: list[dict[str, Any]] = [
     },
 
     # ─── Netflix ─────────────────────────────────────────────────────
-    # Conditional flow: handles profile picker (taps first profile),
-    # handles being inside a movie (back to home first), then searches + plays.
-    # Vision resolver fills gaps when Netflix changes its viewIds.
+    # Based on research of Netflix Android app help docs + 2018+ UI
+    # overhaul (bottom-nav with Home/Search/New&Hot/Downloads/My Netflix).
+    #
+    # Selectors use text + contentDescription (Android Accessibility gives
+    # these generously). ScreenTreeReader does fuzzy substring matching,
+    # and vision resolver (Claude on backend) kicks in on any miss.
+    #
+    # Flow handles 3 entry states:
+    #   A) App not running → launch, splash, maybe profile picker
+    #   B) Already on home → direct to search tab
+    #   C) Mid-playback → back out first
+    #
+    # Profile-picker strategy: search for any node whose text/contentDesc
+    # is a likely profile name (has non-empty text AND is clickable AND
+    # is inside a picker view). Vision resolver handles the specifics.
     {
         "app_package": "com.netflix.mediaclient",
         "app_name": "Netflix",
         "intent": "search_and_play",
-        "reliability_score": 0.75,
-        "source_doc_url": "https://help.netflix.com/",
+        "reliability_score": 0.78,
+        "source_doc_url": "https://help.netflix.com/en/node/47765",
         "steps_json": {
             "app_package": "com.netflix.mediaclient",
             "app_name": "Netflix",
             "intent": "search_and_play",
             "inputs": ["title"],
             "steps": [
-                {"step": 1, "description": "Launch or focus Netflix", "target_screen": "any",
-                 "action": "launch", "target_selector": {"package": "com.netflix.mediaclient"},
+                {"step": 1, "description": "Launch Netflix (no-op if already running)",
+                 "target_screen": "any", "action": "launch",
+                 "target_selector": {"package": "com.netflix.mediaclient"},
                  "params": {}, "confirm_required": False, "timeout_ms": 8000,
                  "on_failure": "abort"},
-                {"step": 2, "description": "Wait for Netflix splash to clear", "target_screen": "any",
-                 "action": "wait", "target_selector": {}, "params": {},
+                {"step": 2, "description": "Wait for splash / UI to settle",
+                 "target_screen": "any", "action": "wait",
+                 "target_selector": {}, "params": {},
                  "confirm_required": False, "timeout_ms": 3500, "on_failure": None},
-                {"step": 3, "description": "If profile picker is showing, tap the first profile (vision resolver handles it)",
+                {"step": 3, "description": "If a playback video is showing, exit back to app navigation",
+                 "target_screen": "any", "action": "back",
+                 "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 600, "on_failure": None},
+                {"step": 4, "description": "If on profile picker (Who's watching?), tap a profile — vision resolver picks the right one",
                  "target_screen": "profile_picker", "action": "tap",
-                 "target_selector": {"text": "Who's watching?"},
-                 "params": {}, "confirm_required": False, "timeout_ms": 2000,
+                 "target_selector": {"text": "Who's watching"},
+                 "params": {}, "confirm_required": False, "timeout_ms": 2500,
                  "on_failure": None},
-                {"step": 4, "description": "If currently watching a video, back out to navigate", "target_screen": "any",
-                 "action": "back", "target_selector": {}, "params": {},
-                 "confirm_required": False, "timeout_ms": 800, "on_failure": None},
-                {"step": 5, "description": "Tap search icon in bottom nav", "target_screen": "home",
-                 "action": "tap", "target_selector": {"contentDescription": "Search"},
+                {"step": 5, "description": "Wait for home after profile selection",
+                 "target_screen": "home", "action": "wait",
+                 "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 2500, "on_failure": None},
+                {"step": 6, "description": "Tap Search tab in bottom navigation",
+                 "target_screen": "home", "action": "tap",
+                 "target_selector": {"contentDescription": "Search"},
                  "params": {}, "confirm_required": False, "timeout_ms": 4000,
                  "on_failure": "retry_once"},
-                {"step": 6, "description": "Type the title to search",
+                {"step": 7, "description": "Wait for search screen keyboard",
+                 "target_screen": "search", "action": "wait",
+                 "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 1200, "on_failure": None},
+                {"step": 8, "description": "Type the movie or show title",
                  "target_screen": "search", "action": "type",
-                 "target_selector": {"viewId": "com.netflix.mediaclient:id/search_edit_text"},
-                 "params": {"text": "{{title}}"}, "confirm_required": False,
-                 "timeout_ms": 3000, "on_failure": None},
-                {"step": 7, "description": "Wait for search results", "target_screen": "search_results",
-                 "action": "wait", "target_selector": {}, "params": {},
-                 "confirm_required": False, "timeout_ms": 1500, "on_failure": None},
-                {"step": 8, "description": "Tap the first matching title in results",
+                 "target_selector": {"className": "android.widget.EditText"},
+                 "params": {"text": "{{title}}"},
+                 "confirm_required": False, "timeout_ms": 3000, "on_failure": None},
+                {"step": 9, "description": "Wait for search results",
+                 "target_screen": "search_results", "action": "wait",
+                 "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 2000, "on_failure": None},
+                {"step": 10, "description": "Tap the matching title tile — fuzzy-matches contentDescription containing the title",
                  "target_screen": "search_results", "action": "tap",
                  "target_selector": {"contentDescription": "{{title}}"},
                  "params": {}, "confirm_required": False, "timeout_ms": 5000,
                  "on_failure": "ask_user"},
-                {"step": 9, "description": "Tap play on the title details page",
+                {"step": 11, "description": "Wait for title details page",
+                 "target_screen": "title_details", "action": "wait",
+                 "target_selector": {}, "params": {},
+                 "confirm_required": False, "timeout_ms": 2000, "on_failure": None},
+                {"step": 12, "description": "Tap Play button on the title details page",
                  "target_screen": "title_details", "action": "tap",
-                 "target_selector": {"contentDescription": "Play"},
+                 "target_selector": {"text": "Play"},
                  "params": {}, "confirm_required": False, "timeout_ms": 5000,
                  "on_failure": "ask_user"},
             ],
-            "notes": "Step 3 + 4 are conditional cleanup — if not on profile picker / playback, those steps no-op.",
+            "notes": (
+                "Selectors based on Netflix Android help docs + UI behaviour since 2018. "
+                "Steps 3 + 4 are conditional: back is no-op if not in playback, "
+                "profile-tap is no-op if not on picker. Vision resolver handles any drift."
+            ),
         },
     },
 
