@@ -45,9 +45,11 @@ class AgentTool(BaseModel):
     """A single tool call returned by the agent."""
 
     tool: Literal[
-        "tap",              # tap at (x, y) OR on node matching selector
+        "tap_node",         # ★ preferred — tap indexed node from current tree
+        "type_in_node",     # ★ preferred — type into indexed editable node
+        "tap",              # tap at (x, y) coords — use when target only visible in screenshot
         "long_press",
-        "type",             # type text into focused field OR selector
+        "type",             # type text into currently focused field
         "swipe",            # swipe up/down/left/right
         "wait",             # wait N ms for UI to settle
         "back",             # Android back
@@ -58,7 +60,9 @@ class AgentTool(BaseModel):
         "done",             # task complete
         "give_up",          # cannot continue
     ]
-    # tap / long_press / type location
+    # tap_node / type_in_node — the `i` from the tree nodes list
+    node_index: int | None = Field(default=None, ge=0, le=500)
+    # tap / long_press coordinates
     x: int | None = Field(default=None, ge=0)
     y: int | None = Field(default=None, ge=0)
     selector: dict[str, Any] = Field(default_factory=dict,

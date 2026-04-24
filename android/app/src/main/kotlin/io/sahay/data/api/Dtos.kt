@@ -161,6 +161,7 @@ data class AgentStepRequest(val observation: AgentObservation)
 @Serializable
 data class AgentTool(
     val tool: String,
+    @SerialName("node_index") val nodeIndex: Int? = null,
     val x: Int? = null,
     val y: Int? = null,
     val selector: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),

@@ -43,24 +43,49 @@ class AgentStepResult:
 
 _TOOLS: list[dict[str, Any]] = [
     {
-        "name": "tap",
-        "description": "Tap at a pixel coordinate OR on a node matching the selector. "
-                       "Prefer coordinates when you can see the target in the screenshot. "
-                       "Use selector {text|contentDescription|viewId} as a fallback.",
+        "name": "tap_node",
+        "description": "PREFERRED. Tap the indexed node from the current screen's "
+                       "`nodes` list. Pass the `i` value from the node you want "
+                       "(e.g. tap_node(node_index=7)). Always correct — we use the "
+                       "node's real on-screen bounds.",
         "input_schema": {
             "type": "object",
+            "required": ["node_index"],
             "properties": {
-                "x": {"type": "integer", "description": "X pixel from left edge"},
-                "y": {"type": "integer", "description": "Y pixel from top edge"},
-                "selector": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "contentDescription": {"type": "string"},
-                        "viewId": {"type": "string"},
-                    },
-                },
-                "reasoning": {"type": "string", "description": "1-line rationale"},
+                "node_index": {"type": "integer",
+                               "description": "The `i` value from the tree nodes list"},
+                "reasoning": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "type_in_node",
+        "description": "PREFERRED for text input. Focus the indexed editable node and "
+                       "type text in one atomic step. Node must have edit:true or be "
+                       "an EditText-like class.",
+        "input_schema": {
+            "type": "object",
+            "required": ["node_index", "text"],
+            "properties": {
+                "node_index": {"type": "integer"},
+                "text": {"type": "string"},
+                "reasoning": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "tap",
+        "description": "Fallback — tap at raw (x, y) pixel coords. ONLY when the target "
+                       "isn't in the nodes list but you can clearly see it in the "
+                       "screenshot. Coords in device pixels (0..screen_width, "
+                       "0..screen_height). Prefer tap_node.",
+        "input_schema": {
+            "type": "object",
+            "required": ["x", "y"],
+            "properties": {
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
+                "reasoning": {"type": "string"},
             },
         },
     },
@@ -193,16 +218,23 @@ _TOOLS: list[dict[str, Any]] = [
 
 _SYSTEM = """You are Sahay — a fully-automated personal assistant agent living inside the user's Android phone. The user speaks a natural-language goal; YOU drive the phone screen-by-screen to accomplish it. No human intervention between steps.
 
+WHAT YOU SEE:
+• An accessibility tree JSON with numbered interactive nodes. Each has: `i` (index), `x`/`y` (screen center in real device pixels), `cls`, `text`, `cd` (contentDescription), `clk` (clickable), `edit` (editable).
+• Optionally a JPEG screenshot for visual context. Use the tree for action targets; the screenshot only for understanding layout / confirming state.
+
 IRONCLAD RULES:
-1. PAYMENT APPS ARE FORBIDDEN. Never open, tap inside, or type into: com.google.android.apps.nbu.paisa.user, com.phonepe.app, net.one97.paytm, or any banking / wallet / UPI app. If the user asks, return tool=give_up explaining payment is blocked.
-2. You see the current screen via (a) an accessibility tree JSON and (b) a JPEG screenshot. The screenshot is 720px wide; multiply any coordinates you estimate from the image by (screen_width / 720) before returning them, so they match the device.
-3. Every turn, return ONE tool call. Not two, not a summary, not prose — just one tool.
-4. Be aggressive about acting. Profile picker → tap first profile. Consent dialog → tap Allow/Continue. Search bar visible → tap it. Only use ask_user for genuine semantic ambiguity.
-5. WHEN YOU CAN SEE THE TARGET IN THE SCREENSHOT, ALWAYS RETURN COORDINATES (x, y). Never return a selector with numeric viewId like "2131427347" — those are internal references you cannot see. Valid selectors use text / contentDescription / string viewId (e.g. "com.netflix.mediaclient:id/search_button"). If unsure, prefer coordinates.
-6. When typing: first tap the input field (if not focused), then call tool=type.
-7. Use speak() rarely — short progress updates or results. Don't chat.
-8. When the goal is achieved, return tool=done with a 1-sentence summary.
-9. Action history shows what you've already done. If the LAST 2 steps were the same tool with the same target and didn't progress the screen, TRY SOMETHING DIFFERENT — back button, different coords, scroll, or give_up.
+1. PAYMENT APPS ARE FORBIDDEN. Never open, tap, or type into GPay / PhonePe / Paytm / banking / UPI / wallet apps. If the user asks, return tool=give_up.
+2. Every turn, return ONE tool call. Nothing else.
+3. **TOOL PREFERENCE:**
+     • To tap a button / tile / menu item → tool=tap_node(node_index=I). I is the `i` of the node in the nodes list.
+     • To type into a field → tool=type_in_node(node_index=I, text="..."). Use it on nodes where edit:true.
+     • tool=tap(x,y) is only for cases where the target is visible in the screenshot but somehow not in the nodes list (rare — icons inside canvas views, WebViews).
+     • NEVER emit a tap with a numeric viewId like "2131427347" — those are Android internal R.id ints and are unresolvable.
+4. Be aggressive. Profile picker → tap the first profile node. Consent dialog → tap Allow / Continue. Search bar visible → tap_node on it. Only use ask_user for genuine semantic ambiguity (e.g. two "Amirtha" contacts).
+5. When you need to search / type, look for the nearest node with edit:true and use type_in_node on it in one step. No separate tap-then-type.
+6. Use speak() rarely — only to confirm progress or give a result.
+7. When goal is achieved, return tool=done.
+8. If the last 2 history entries were the same tool with the same target and nothing changed, TRY SOMETHING DIFFERENT — back, swipe, different node, or give_up.
 
 HOW TO REASON (silently):
 - What is the goal?
@@ -265,6 +297,7 @@ def _extract_tool_call(msg: Message) -> AgentTool:
             args = dict(block.input or {})
             return AgentTool(
                 tool=name,
+                node_index=args.get("node_index"),
                 x=args.get("x"),
                 y=args.get("y"),
                 selector=args.get("selector") or {},

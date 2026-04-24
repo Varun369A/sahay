@@ -139,6 +139,8 @@ class AgentLoop @Inject constructor(
         action: AgentTool,
     ): ExecResult {
         return when (action.tool) {
+            "tap_node" -> tapIndexedNode(service, action)
+            "type_in_node" -> typeInIndexedNode(service, action)
             "tap", "long_press" -> tapOrLongPress(service, action)
             "type" -> typeText(service, action)
             "swipe" -> swipe(service, action)
@@ -164,6 +166,39 @@ class AgentLoop @Inject constructor(
             "give_up" -> ExecResult("give_up", settleMs = 0)
             else -> ExecResult("unknown_tool:${action.tool}", settleMs = 0)
         }
+    }
+
+    private suspend fun tapIndexedNode(
+        service: AccessibilityService, action: AgentTool,
+    ): ExecResult {
+        val i = action.nodeIndex ?: return ExecResult("missing_node_index")
+        val node = ScreenTreeReader.nodeForIndex(i) ?: return ExecResult("unknown_node:$i")
+        // Tap the real on-screen center — no guessing.
+        val ok = GestureDispatcher.tap(service, node.centerX, node.centerY)
+        Log.i(TAG, "tap_node i=$i at (${node.centerX},${node.centerY}) text='${node.text}' cd='${node.contentDescription}' ok=$ok")
+        return ExecResult(if (ok) "ok" else "gesture_rejected", settleMs = 900)
+    }
+
+    private suspend fun typeInIndexedNode(
+        service: AccessibilityService, action: AgentTool,
+    ): ExecResult {
+        val i = action.nodeIndex ?: return ExecResult("missing_node_index")
+        val text = action.text ?: return ExecResult("missing_text")
+        val indexed = ScreenTreeReader.nodeForIndex(i) ?: return ExecResult("unknown_node:$i")
+        val target = indexed.node
+        // Focus first so the keyboard opens on the right field.
+        target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = android.os.Bundle().apply {
+            putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                text,
+            )
+        }
+        val ok = target.performAction(
+            android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args
+        )
+        Log.i(TAG, "type_in_node i=$i text='${text.take(40)}' ok=$ok")
+        return ExecResult(if (ok) "ok" else "set_text_failed", settleMs = 700)
     }
 
     private suspend fun tapOrLongPress(
