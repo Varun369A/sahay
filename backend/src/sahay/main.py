@@ -24,7 +24,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sahay import __version__
 from sahay.config import get_settings
 from sahay.db.session import dispose_engine
-from sahay.routers import actions, auth, files, health, playbooks, users
+from sahay.routers import actions, agent, auth, files, health, playbooks, users
 from sahay.util.logging import configure_logging, get_logger
 
 settings = get_settings()
@@ -116,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(actions.router)
     app.include_router(actions.usage_router)
     app.include_router(files.router)
+    app.include_router(agent.router)
 
     # Global error handler — never leak stack traces in production.
     @app.exception_handler(Exception)
