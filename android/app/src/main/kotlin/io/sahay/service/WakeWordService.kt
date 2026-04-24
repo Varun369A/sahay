@@ -120,7 +120,17 @@ class WakeWordService : Service() {
             Log.e(TAG, "vosk_model_load_failed")
             return
         }
-        val recognizer = Recognizer(model, SAMPLE_RATE.toFloat())
+        // GRAMMAR-CONSTRAINED recognizer — much more accurate at detecting
+        // just our wake phrases. Vosk only considers words from this list.
+        // "[unk]" is a Vosk convention meaning "anything else is noise".
+        val grammarJson = buildGrammarJson(wakePhrases)
+        Log.i(TAG, "vosk_grammar=$grammarJson")
+        val recognizer = try {
+            Recognizer(model, SAMPLE_RATE.toFloat(), grammarJson)
+        } catch (t: Throwable) {
+            Log.w(TAG, "grammar_recognizer_failed, falling back to free-form", t)
+            Recognizer(model, SAMPLE_RATE.toFloat())
+        }
 
         val bufSize = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
@@ -242,6 +252,30 @@ class WakeWordService : Service() {
         return listOf(name, "hey $name", "ok $name", "okay $name").distinct()
     }
 
+    /**
+     * Build Vosk grammar JSON — restrict the recognizer to ONLY consider
+     * our wake phrases (huge accuracy boost on a small model).
+     *
+     * Format: ["pluto", "hey pluto", ..., "[unk]"]
+     * "[unk]" tells Vosk "anything else is noise" — without it, Vosk tries
+     * to fit every sound to one of our phrases and misfires on breathing.
+     */
+    private fun buildGrammarJson(phrases: List<String>): String {
+        // Expand each phrase with phonetic cousins that English-Indian
+        // speakers often produce so e.g. "pluto" also catches "plato".
+        val expanded = mutableSetOf<String>()
+        for (p in phrases) {
+            expanded += p
+            // If single word, add common homophones / near-matches.
+            if (!p.contains(" ")) {
+                PHONETIC_COUSINS[p]?.let { expanded.addAll(it) }
+            }
+        }
+        val arr = expanded.joinToString(",", "[", ",\"[unk]\"]") { "\"$it\"" }
+        return arr
+    }
+
+
     // ─── Notification ─────────────────────────────────────────────────
 
     private fun startForegroundCompat(initialText: String) {
@@ -278,6 +312,17 @@ class WakeWordService : Service() {
         private const val TAG = "WakeWord"
         private const val NOTIF_ID = 1002
         private const val SAMPLE_RATE = 16_000
+
+        /** Hand-curated near-homophones English-Indian speakers produce. */
+        val PHONETIC_COUSINS: Map<String, List<String>> = mapOf(
+            "pluto"  to listOf("plato", "playdough", "flute"),
+            "sahay"  to listOf("soha", "so hey", "sir hey"),
+            "jarvis" to listOf("jar was", "charles"),
+            "nova"   to listOf("no va", "kona"),
+            "alfred" to listOf("al fred"),
+            "echo"   to listOf("eco"),
+            "mira"   to listOf("mirror", "myra"),
+        )
 
         fun start(context: android.content.Context) {
             val i = Intent(context, WakeWordService::class.java)
