@@ -46,13 +46,24 @@ android {
 
     signingConfigs {
         create("release") {
-            // Configured at APK build time. See android/scripts/build_release.md
-            val storePath = project.findProperty("SAHAY_KEYSTORE") as String?
-            if (storePath != null) {
+            // Reads from local.properties first (gitignored), then Gradle -P
+            // flags, then env vars. Keystore path is resolved relative to the
+            // `app` module so local.properties can say SAHAY_KEYSTORE=sahay-release.jks.
+            val rootLocalProps = Properties().apply {
+                val f = rootProject.file("local.properties")
+                if (f.exists()) f.inputStream().use { stream -> load(stream) }
+            }
+            fun signProp(name: String): String? =
+                (project.findProperty(name) as String?)
+                    ?: rootLocalProps.getProperty(name)
+                    ?: System.getenv(name)
+
+            val storePath = signProp("SAHAY_KEYSTORE")
+            if (!storePath.isNullOrBlank()) {
                 storeFile = file(storePath)
-                storePassword = project.findProperty("SAHAY_KEYSTORE_PASSWORD") as String?
-                keyAlias = project.findProperty("SAHAY_KEY_ALIAS") as String?
-                keyPassword = project.findProperty("SAHAY_KEY_PASSWORD") as String?
+                storePassword = signProp("SAHAY_KEYSTORE_PASSWORD")
+                keyAlias = signProp("SAHAY_KEY_ALIAS")
+                keyPassword = signProp("SAHAY_KEY_PASSWORD")
             }
         }
     }
