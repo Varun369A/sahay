@@ -43,9 +43,15 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 30
 
     # ─── Resend ──────────────────────────────────────────────────────
+    # Sender domain MUST be verified at Resend (SPF + DKIM) — otherwise
+    # Resend silently drops sends to anyone except the API key owner's
+    # email, and the multi-tenant signup flow appears to "only work for
+    # one user." Default points at `aarionlabs.com` (already verified);
+    # override via env vars `RESEND_FROM_EMAIL` / `RESEND_REPLY_TO` in
+    # production if the brand name on outgoing email needs to change.
     resend_api_key: SecretStr
-    resend_from_email: str = "Sahay <noreply@mail.sahay.app>"
-    resend_reply_to: str = "support@sahay.app"
+    resend_from_email: str = "Sahay <noreply@aarionlabs.com>"
+    resend_reply_to: str = "support@aarionlabs.com"
 
     # ─── Anthropic ───────────────────────────────────────────────────
     anthropic_api_key: SecretStr

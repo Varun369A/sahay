@@ -53,6 +53,14 @@ async def _deliver_otp_or_raise(
     In non-production we ALSO print the OTP to the structured log at
     WARN level so you can still sign in when Resend isn't yet configured.
     """
+    # Non-production ALWAYS echoes the OTP to logs — not just on send
+    # failure — so debug-APK testing on a non-prod backend doesn't depend
+    # on email actually arriving. Production still keeps codes silent.
+    if not _settings.is_production:
+        log.warning(
+            "otp_dev_code", email=to_email, code=code, purpose=purpose,
+            reason="dev-mode echo; production never logs OTPs",
+        )
     try:
         await send_otp_email(
             to_email=to_email, code=code, purpose=purpose, locale=locale,
