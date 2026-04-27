@@ -185,6 +185,7 @@ data class AgentObservation(
     @SerialName("screen_width") val screenWidth: Int? = null,
     @SerialName("screen_height") val screenHeight: Int? = null,
     @SerialName("assistant_name") val assistantName: String = "Sahay",
+    @SerialName("user_reply") val userReply: String? = null,
 )
 
 @Serializable

@@ -129,10 +129,19 @@ class WakeWordService : Service() {
             Log.e(TAG, "vosk_model_load_failed")
             return
         }
-        // GRAMMAR-CONSTRAINED recognizer — much more accurate at detecting
-        // just our wake phrases. Vosk only considers words from this list.
-        // "[unk]" is a Vosk convention meaning "anything else is noise".
-        val grammarJson = buildGrammarJson(wakePhrases)
+        // GRAMMAR-CONSTRAINED recognizer — accurate at detecting just our
+        // wake phrases. "[unk]" is the Vosk convention meaning "anything
+        // else is noise."
+        //
+        // Critical: we ALSO include common competitor wake phrases ("hey
+        // google", "ok google", "alexa", "hey siri") in the grammar so
+        // Vosk has somewhere to fit those utterances instead of force-
+        // fitting them onto our wake phrase. matchesWake() filters the
+        // recognized text against ONLY the user's wake phrases, so a
+        // recognized "hey google" will NOT trigger Sahay even though
+        // Vosk has it in its vocabulary.
+        val grammarPhrases = wakePhrases + COMPETITOR_PHRASES
+        val grammarJson = buildGrammarJson(grammarPhrases)
         Log.i(TAG, "vosk_grammar=$grammarJson")
         val recognizer = try {
             Recognizer(model, SAMPLE_RATE.toFloat(), grammarJson)
@@ -385,6 +394,25 @@ class WakeWordService : Service() {
             "alfred" to listOf("al fred"),
             "echo"   to listOf("eco"),
             "mira"   to listOf("mirror", "myra"),
+        )
+
+        /**
+         * Competitor wake phrases included in the Vosk grammar so they
+         * have somewhere to fit. Without this, a user shouting "hey
+         * google" gets force-fitted onto the closest grammar phrase
+         * (typically "hey sahay") and fires Sahay falsely.
+         *
+         * IMPORTANT: these phrases are in the grammar but NOT in
+         * `wakePhrases`. matchesWake() filters against `wakePhrases`
+         * only, so a recognised "hey google" recognises but does NOT
+         * trigger.
+         */
+        val COMPETITOR_PHRASES: List<String> = listOf(
+            "hey google", "ok google", "okay google",
+            "hey siri", "siri",
+            "alexa",
+            "hey bixby", "bixby",
+            "hey cortana",
         )
 
         fun start(context: android.content.Context) {

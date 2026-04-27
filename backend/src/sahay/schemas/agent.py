@@ -38,6 +38,17 @@ class AgentObservation(BaseModel):
     screen_height: int | None = None
     assistant_name: str = Field(default="Sahay", max_length=40,
                                 description="User's chosen assistant name — used for personality")
+    user_reply: str | None = Field(
+        default=None, max_length=2000,
+        description=(
+            "Set when the device is RESUMING a paused conversation — the "
+            "user's spoken answer to the agent's previous ask_user. The "
+            "engine injects this as a synthetic Turn in conversation memory "
+            "BEFORE invoking Claude, so the agent reads the reply naturally "
+            "and continues the original task instead of treating it as a "
+            "fresh goal. Should NOT be set on step 0 of a fresh conversation."
+        ),
+    )
 
 
 # ─── Tool calls Claude can issue ─────────────────────────────────────

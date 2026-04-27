@@ -64,6 +64,7 @@ class TaskWorker @Inject constructor(
     private val queue: TaskQueue,
     private val parser: IntentParser,
     private val json: Json,
+    private val pendingClarification: PendingClarification,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
@@ -87,9 +88,29 @@ class TaskWorker @Inject constructor(
     private suspend fun handle(task: TaskQueue.Task) {
         when (task) {
             is TaskQueue.Task.Utterance -> {
-                // Full-auto: agent loop drives — no regex intent parsing.
-                Log.i(TAG, "handle_utterance text=${task.text}")
-                SahayForegroundService.runAgent(context = context, goal = task.text)
+                // Conversation continuity: if the agent recently asked
+                // the user a clarifying question, treat THIS utterance
+                // as the answer to that question — same conversation,
+                // no fresh task. Otherwise, fresh agent run.
+                val pending = pendingClarification.takeIfFresh()
+                if (pending != null) {
+                    Log.i(
+                        TAG,
+                        "handle_utterance_resume conv=${pending.conversationId.take(8)} " +
+                            "reply='${task.text.take(80)}' " +
+                            "original='${pending.originalGoal.take(60)}'",
+                    )
+                    SahayForegroundService.runResume(
+                        context = context,
+                        conversationId = pending.conversationId,
+                        originalGoal = pending.originalGoal,
+                        userReply = task.text,
+                    )
+                } else {
+                    // Full-auto: agent loop drives — no regex intent parsing.
+                    Log.i(TAG, "handle_utterance text=${task.text}")
+                    SahayForegroundService.runAgent(context = context, goal = task.text)
+                }
             }
             is TaskQueue.Task.DispatchedAction -> {
                 // Legacy path — reuse old runner for pre-structured actions.

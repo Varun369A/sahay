@@ -1051,6 +1051,27 @@ async def step(
         )
 
     # ── Conversation memory: prior turns for Claude ──
+    # Conversation continuity: when the device is RESUMING a paused
+    # conversation, `obs.user_reply` carries what the user said in
+    # response to the previous ask_user. We persist it as a synthetic
+    # Turn BEFORE loading history, so Claude reads it naturally in the
+    # "THIS CONVERSATION SO FAR" block and continues the original task.
+    user_reply_text = (obs.user_reply or "").strip()
+    if user_reply_text:
+        try:
+            await memory.append_turn(
+                user_id, obs.conversation_id,
+                Turn(
+                    ts=__import__("time").time(),
+                    step=obs.step_index,
+                    tool="user_reply",
+                    args_summary=user_reply_text[:200],
+                    outcome="received",
+                    reasoning=None,
+                ),
+            )
+        except Exception as e:
+            log.warning("user_reply_persist_failed", err=str(e))
     prior = await memory.history(user_id, obs.conversation_id, max_turns=12)
     conv_block = format_for_prompt(prior)
 

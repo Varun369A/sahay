@@ -91,6 +91,21 @@ class SahayForegroundService : Service() {
                         "reason=${outcome.reason} summary=${outcome.summary}")
                 }
             }
+            CMD_RUN_RESUME -> {
+                // Conversation continuity: user replied to a previous
+                // ask_user. Re-enter the SAME conversation with their
+                // answer instead of starting a fresh task.
+                val convId = intent.getStringExtra(EXTRA_CONVERSATION_ID) ?: return START_STICKY
+                val originalGoal = intent.getStringExtra(EXTRA_GOAL) ?: return START_STICKY
+                val reply = intent.getStringExtra(EXTRA_USER_REPLY) ?: return START_STICKY
+                currentJob?.cancel()
+                currentJob = scope.launch {
+                    val outcome = agentLoop.resume(convId, originalGoal, reply)
+                    android.util.Log.i("SahayForegroundSvc",
+                        "agent_resume_done success=${outcome.success} steps=${outcome.stepsUsed} " +
+                        "reason=${outcome.reason} summary=${outcome.summary}")
+                }
+            }
             CMD_STOP -> stopSelf()
         }
         return START_STICKY
@@ -133,9 +148,12 @@ class SahayForegroundService : Service() {
         const val EXTRA_INTENT = "intent"
         const val EXTRA_INPUTS_JSON = "inputs_json"
         const val EXTRA_GOAL = "goal"
+        const val EXTRA_CONVERSATION_ID = "conversation_id"
+        const val EXTRA_USER_REPLY = "user_reply"
 
         const val CMD_RUN_INTENT = "run_intent"
         const val CMD_RUN_AGENT = "run_agent"
+        const val CMD_RUN_RESUME = "run_resume"
         const val CMD_STOP = "stop"
 
         private const val NOTIF_ID = 1001
@@ -159,6 +177,30 @@ class SahayForegroundService : Service() {
             val i = Intent(context, SahayForegroundService::class.java).apply {
                 putExtra(EXTRA_COMMAND, CMD_RUN_AGENT)
                 putExtra(EXTRA_GOAL, goal)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(i)
+            } else {
+                context.startService(i)
+            }
+        }
+
+        /**
+         * Resume a paused conversation with the user's spoken reply to
+         * the agent's previous ask_user. TaskWorker calls this when it
+         * sees a fresh PendingClarification within the resume window.
+         */
+        fun runResume(
+            context: android.content.Context,
+            conversationId: String,
+            originalGoal: String,
+            userReply: String,
+        ) {
+            val i = Intent(context, SahayForegroundService::class.java).apply {
+                putExtra(EXTRA_COMMAND, CMD_RUN_RESUME)
+                putExtra(EXTRA_CONVERSATION_ID, conversationId)
+                putExtra(EXTRA_GOAL, originalGoal)
+                putExtra(EXTRA_USER_REPLY, userReply)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)

@@ -45,6 +45,7 @@ class AgentLoop @Inject constructor(
     private val tts: TtsClient,
     private val prefs: UserPreferences,
     private val idempotency: IdempotencyTracker,
+    private val pendingClarification: PendingClarification,
 ) {
 
     data class Outcome(
@@ -62,13 +63,49 @@ class AgentLoop @Inject constructor(
      * other. For multi-turn dialogues (future), the caller can reuse a
      * conversation_id by calling a future overload.
      */
-    suspend fun run(goal: String): Outcome {
+    /** Start a fresh task from scratch — new conversation, no prior context. */
+    suspend fun run(goal: String): Outcome =
+        runInternal(goal = goal, resumeConversationId = null, resumeReply = null)
+
+    /**
+     * Resume a paused conversation with the user's spoken answer to the
+     * agent's previous `ask_user`. The agent reads the reply naturally
+     * via conversation memory — no fresh "what's my goal?" reasoning,
+     * no loss of the original task context.
+     *
+     *   • `conversationId` — the id from the paused run (held by
+     *     PendingClarification).
+     *   • `originalGoal`   — same goal as the original run; used for
+     *     prompt context if the server's Redis has been evicted.
+     *   • `userReply`      — what the user just said in response to the
+     *     question. Sent ONCE on the first server step of the resumed
+     *     loop, then cleared.
+     */
+    suspend fun resume(
+        conversationId: String,
+        originalGoal: String,
+        userReply: String,
+    ): Outcome =
+        runInternal(
+            goal = originalGoal,
+            resumeConversationId = conversationId,
+            resumeReply = userReply,
+        )
+
+    private suspend fun runInternal(
+        goal: String,
+        resumeConversationId: String?,
+        resumeReply: String?,
+    ): Outcome {
         val service = SahayAccessibilityService.instance()
             ?: return Outcome(false, 0, reason = "accessibility_service_not_running")
 
         tts.init()
 
-        val conversationId = UUID.randomUUID().toString()
+        // Resume reuses the prior conversation id so the server-side
+        // memory + plan stay aligned. Fresh runs always get a new id.
+        val isResume = resumeConversationId != null
+        val conversationId = resumeConversationId ?: UUID.randomUUID().toString()
         val snap = prefs.snapshot()
         val assistantName = snap.assistantName
         val screenshotUploadEnabled = snap.screenshotUploadEnabled
@@ -83,8 +120,11 @@ class AgentLoop @Inject constructor(
 
         val (sw, sh) = screenSize()
         val history = mutableListOf<JsonObject>()
+        // Resume runs start at step_index=1 so server-side first-turn
+        // logic (goal storage, goal rewriter) doesn't fire again.
+        val startStep = if (isResume) 1 else 0
 
-        for (step in 0 until MAX_STEPS) {
+        for (step in startStep until MAX_STEPS) {
             if (PaymentBlocklist.isBlocked(service.rootInActiveWindow?.packageName?.toString())) {
                 tts.speak("I can't work inside payment apps for your safety.")
                 return Outcome(false, step, reason = "payment_app_foreground")
@@ -104,6 +144,12 @@ class AgentLoop @Inject constructor(
             val (obsW, obsH) = if (safeShot != null) safeShot.width to safeShot.height
                                else sw to sh
 
+            // Send userReply on the FIRST iteration of a resume only.
+            // Server engine appends it as a Turn in conversation memory
+            // before invoking Claude — agent reads the reply naturally.
+            val replyForThisStep =
+                if (isResume && step == startStep) resumeReply else null
+
             val obs = AgentObservation(
                 goal = goal,
                 conversationId = conversationId,
@@ -115,6 +161,7 @@ class AgentLoop @Inject constructor(
                 screenWidth = obsW,
                 screenHeight = obsH,
                 assistantName = assistantName,
+                userReply = replyForThisStep,
             )
 
             // 2. Ask Claude
@@ -153,15 +200,28 @@ class AgentLoop @Inject constructor(
             when (exec.outcome) {
                 "done" -> {
                     tts.speak(action.message ?: "Done.")
+                    // Task closed cleanly — drop any pending clarification
+                    // so a stale earlier question can't hijack a future
+                    // utterance.
+                    pendingClarification.clear()
                     return Outcome(true, step + 1, summary = action.message)
                 }
                 "give_up" -> {
                     tts.speak(action.message ?: "I couldn't finish that.")
+                    pendingClarification.clear()
                     return Outcome(false, step + 1, reason = action.message)
                 }
                 "ask_user" -> {
-                    tts.speak(action.message ?: "I need more info.")
-                    return Outcome(false, step + 1, reason = "asked_user:${action.message}")
+                    val question = action.message ?: "I need more info."
+                    tts.speak(question)
+                    // Stash the conversation so the user's next utterance
+                    // resumes THIS task instead of starting a new one.
+                    pendingClarification.set(
+                        conversationId = conversationId,
+                        originalGoal = goal,
+                        askedQuestion = question,
+                    )
+                    return Outcome(false, step + 1, reason = "asked_user:$question")
                 }
             }
 
