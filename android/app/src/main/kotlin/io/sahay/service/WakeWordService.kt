@@ -22,6 +22,7 @@ import io.sahay.engine.TaskWorker
 import io.sahay.voice.AcousticContext
 import io.sahay.voice.AudioRecorder
 import io.sahay.voice.SarvamSttClient
+import io.sahay.voice.VoiceVerifier
 import io.sahay.voice.VoskModelManager
 import io.sahay.voice.WakeTelemetry
 import javax.inject.Inject
@@ -70,6 +71,7 @@ class WakeWordService : Service() {
     @Inject lateinit var tts: io.sahay.voice.TtsClient
     @Inject lateinit var acoustic: AcousticContext
     @Inject lateinit var telemetry: WakeTelemetry
+    @Inject lateinit var voiceVerifier: VoiceVerifier
 
     @Volatile private var matchMode: WakeTelemetry.MatchMode = WakeTelemetry.MatchMode.LENIENT
 
@@ -231,6 +233,27 @@ class WakeWordService : Service() {
                 updateNotif("Listening to your command…")
                 val wav = recorder.record(maxMillis = 10_000)
                 if (wav == null) { Log.w(TAG, "capture_recorder_returned_null"); return@launch }
+
+                // Voice ID gate: when the user has enrolled their voice,
+                // require the captured audio's energy/ZCR fingerprint to
+                // correlate with at least one enrolled sample. NoEnrollment
+                // means verifier is disabled (graceful degradation) so
+                // existing users without enrollment keep working.
+                val pcm = runCatching { wav.readBytes() }.getOrNull()
+                if (pcm != null) {
+                    when (val verdict = voiceVerifier.verify(pcm)) {
+                        is VoiceVerifier.Result.Rejected -> {
+                            Log.i(TAG, "voice_id_rejected sim=${"%.3f".format(verdict.similarity)}")
+                            wav.delete()
+                            return@launch                            // accepted=false handled in `finally`
+                        }
+                        is VoiceVerifier.Result.Accepted -> {
+                            Log.i(TAG, "voice_id_accepted sim=${"%.3f".format(verdict.similarity)}")
+                        }
+                        VoiceVerifier.Result.NoEnrollment -> Unit       // verifier disabled
+                    }
+                }
+
                 val transcription = stt.transcribe(wav, languageHint = locale)
                 wav.delete()
                 if (!transcription.ok) {
