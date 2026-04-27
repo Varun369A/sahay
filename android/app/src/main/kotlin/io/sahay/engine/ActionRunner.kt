@@ -69,6 +69,9 @@ class ActionRunner @Inject constructor(
             ?: return@withContext RunResult(success = false, reason = "accessibility_service_not_running")
         val executor = service.executor()
             ?: return@withContext RunResult(success = false, reason = "executor_unavailable")
+        // Fresh selector-tier log for this run only — selector_trainer
+        // attribution must not bleed across runs.
+        executor.resetSelectorTiers()
 
         val started = System.currentTimeMillis()
 
@@ -128,6 +131,9 @@ class ActionRunner @Inject constructor(
                     reportPlaybookOutcome(
                         plan.playbookId, plan.revisionId,
                         "aborted", null, "blocklist_or_kill_switch", durationMs,
+                        executor.selectorTiersSnapshot()
+                            .mapKeys { it.key.toString() }
+                            .takeIf { it.isNotEmpty() },
                     )
                     return@withContext RunResult(success = false, reason = "aborted")
                 }
@@ -140,11 +146,16 @@ class ActionRunner @Inject constructor(
         }
 
         val durationMs = System.currentTimeMillis() - started
+        // Stringify the step indexes for JSON wire compatibility. Map
+        // values are tier names ("viewId" / "sibling_anchor" / etc.).
+        val tiers = executor.selectorTiersSnapshot()
+            .mapKeys { it.key.toString() }
+            .takeIf { it.isNotEmpty() }
         if (firstFailedStepIdx == null) {
             log(appPackage, intent, "success", durationMs)
             reportPlaybookOutcome(
                 plan.playbookId, plan.revisionId,
-                "success", null, null, durationMs,
+                "success", null, null, durationMs, tiers,
             )
             RunResult(success = true)
         } else {
@@ -155,7 +166,7 @@ class ActionRunner @Inject constructor(
             log(appPackage, intent, outcomeKind, durationMs, failureReason = firstFailedReason)
             reportPlaybookOutcome(
                 plan.playbookId, plan.revisionId,
-                outcomeKind, firstFailedStepIdx, firstFailedReason, durationMs,
+                outcomeKind, firstFailedStepIdx, firstFailedReason, durationMs, tiers,
             )
             // Surface success=true to the caller because full-auto completed
             // the run, but the reliability layer has already counted this as
@@ -171,6 +182,7 @@ class ActionRunner @Inject constructor(
         failedStepIndex: Int?,
         failedReason: String?,
         durationMs: Long,
+        selectorTiers: Map<String, String>? = null,
     ) {
         if (playbookId.isNullOrBlank()) return   // vision-sourced plan, nothing to score
         runCatching {
@@ -182,6 +194,7 @@ class ActionRunner @Inject constructor(
                     failedReason = failedReason?.take(200),
                     durationMs = durationMs.coerceAtLeast(0),
                     revisionId = revisionId,
+                    selectorTiers = selectorTiers,
                 )
             )
         }.onFailure {

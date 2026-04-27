@@ -34,6 +34,10 @@ from sahay.db.models import Playbook, PlaybookRevision, PlaybookRunOutcome
 from sahay.domain.payment_blocklist import is_payment_app
 from sahay.services.claude_client import complete
 from sahay.services.playbook_ingestor import PlaybookSpec
+from sahay.services.selector_trainer import (
+    per_step_tier_histogram,
+    step_recommendation,
+)
 from sahay.util.logging import get_logger
 
 log = get_logger(__name__)
@@ -179,10 +183,13 @@ Hard rules:
 def build_improvement_prompt(
     pb: Playbook,
     breakdown: FailureBreakdown,
+    *,
+    tier_recommendations: dict[int, dict] | None = None,
 ) -> str:
     """User-message body for the improver call. Includes the current spec
-    + the failure-class histogram + the failing-step indexes so Opus
-    knows exactly where to focus."""
+    + the failure-class histogram + the failing-step indexes + (when
+    available) the selector_trainer's tier recommendations so Opus knows
+    exactly which selector tier the device has been falling back to."""
     spec_json = json.dumps(pb.steps_json, ensure_ascii=False, indent=2)
     classes = "\n".join(
         f"  • {cls}: {count}" for cls, count in
@@ -192,6 +199,21 @@ def build_improvement_prompt(
         ", ".join(str(i) for i in breakdown.failing_step_indexes[:5])
         or "(no specific step — failures spread across the playbook)"
     )
+    tier_block = ""
+    if tier_recommendations:
+        lines = []
+        for step_idx, rec in sorted(tier_recommendations.items()):
+            lines.append(
+                f"  • step {step_idx}: tier `{rec['winning_tier']}` won "
+                f"{int(rec['share'] * 100)}% of {rec['n']} matches "
+                f"({rec['recommendation']})"
+            )
+        tier_block = (
+            "\nSelector-tier wins (last 14 days, dominant non-primary tiers):\n"
+            + "\n".join(lines) + "\n"
+            + "When a non-primary tier is dominant, prefer to PROMOTE it "
+            "into the primary selector for that step.\n"
+        )
     return (
         f"Playbook: {pb.app_name} ({pb.app_package}) / intent={pb.intent}\n"
         f"Current reliability_score: {float(pb.reliability_score):.3f}\n"
@@ -199,6 +221,7 @@ def build_improvement_prompt(
         f"Failures observed in the last {LOOKBACK_DAYS} days: {breakdown.total_failures}\n"
         f"\nFailure classes:\n{classes}\n"
         f"\nMost-failing step indexes (1-based): {failing_steps}\n"
+        f"{tier_block}"
         f"\nCurrent spec:\n```json\n{spec_json}\n```\n"
     )
 
@@ -260,7 +283,17 @@ async def improve_playbook(
             playbook_id, None, f"insufficient_samples:{breakdown.total_failures}", 0,
         )
 
-    user_msg = build_improvement_prompt(pb, breakdown)
+    # Selector-tier histogram per step. Empty when the device hasn't
+    # shipped tier telemetry yet; included in the prompt only when there
+    # are concrete recommendations to surface.
+    tier_hist = await per_step_tier_histogram(db, playbook_id=playbook_id)
+    tier_recs: dict[int, dict] = {}
+    for step_idx, hist in tier_hist.items():
+        rec = step_recommendation(hist)        # primary_tier unknown → flag only on dominance
+        if rec is not None:
+            tier_recs[step_idx] = rec
+
+    user_msg = build_improvement_prompt(pb, breakdown, tier_recommendations=tier_recs)
     result = await complete(
         workload="ingestion",                # Opus 4.7
         system=_IMPROVER_SYSTEM,

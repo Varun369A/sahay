@@ -105,6 +105,7 @@ async def outcome(
         failed_reason=body.failed_reason,
         duration_ms=body.duration_ms,
         revision_id=body.revision_id,
+        selector_tiers=body.selector_tiers,
     )
     if update is None:
         # Either an unknown outcome bucket or the playbook row is gone.

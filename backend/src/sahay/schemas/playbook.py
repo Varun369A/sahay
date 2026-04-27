@@ -60,6 +60,10 @@ class PlaybookOutcomeRequest(BaseModel):
     # attribution credits THAT revision's counters instead of (or in
     # addition to) the parent's live counters.
     revision_id: UUID | None = None
+    # Per-step record of which selector tier won the match. Keys are
+    # step indexes as strings; values are tier names. Feeds the
+    # selector_trainer aggregation that informs the Opus improver.
+    selector_tiers: dict[str, str] | None = None
 
 
 class PlaybookOutcomeResponse(BaseModel):

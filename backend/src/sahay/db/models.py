@@ -207,6 +207,10 @@ class PlaybookRunOutcome(Base):
     # Structured class derived from `failed_reason` by
     # `services.failure_classifier`. Null on success rows.
     failure_class: Mapped[str | None] = mapped_column(String(32))
+    # JSON map of {step_index_str: winning_selector_tier} for the
+    # selector_trainer aggregation. Null when the device didn't ship
+    # tier telemetry (vision-sourced plans, older clients).
+    selector_tiers: Mapped[dict | None] = mapped_column(JSONB)
     duration_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[created_at]
 

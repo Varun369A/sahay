@@ -17,6 +17,21 @@ object ScreenTreeReader {
     @Volatile
     private var lastIndexedNodes: List<IndexedNode> = emptyList()
 
+    /**
+     * Side-channel telemetry: which selector tier won the most recent
+     * findNode/findBySiblingAnchor call. Read by callers that want to
+     * attribute the match (PlaybookExecutor for the selector_trainer
+     * pipeline). Reset to null on a miss.
+     *
+     * Tier names — keep stable; they're persisted as JSON keys server-side:
+     *   "viewId", "text_exact", "cd_exact",
+     *   "text_substring", "cd_substring", "className",
+     *   "sibling_anchor"
+     */
+    @Volatile
+    var lastWinningTier: String? = null
+        private set
+
     data class IndexedNode(
         val index: Int,
         val node: AccessibilityNodeInfo,
@@ -65,45 +80,51 @@ object ScreenTreeReader {
         root: AccessibilityNodeInfo?,
         selectors: Map<String, String?>,
     ): AccessibilityNodeInfo? {
+        lastWinningTier = null
         if (root == null) return null
 
         // 1. viewId — exact, structured ID match
         selectors["viewId"]?.takeIf { it.isNotBlank() && !it.all { c -> c.isDigit() } }?.let { id ->
             val matches = root.findAccessibilityNodeInfosByViewId(id)
-            if (!matches.isNullOrEmpty()) return matches.first()
+            if (!matches.isNullOrEmpty()) {
+                lastWinningTier = "viewId"
+                return matches.first()
+            }
         }
 
         // 2. text exact (case-insensitive)
         selectors["text"]?.takeIf { it.isNotBlank() }?.let { txt ->
             walkFind(root) { it.text?.toString().equals(txt, ignoreCase = true) }
-                ?.let { return it }
+                ?.let { lastWinningTier = "text_exact"; return it }
         }
 
         // 3. contentDescription exact
         selectors["contentDescription"]?.takeIf { it.isNotBlank() }?.let { cd ->
             walkFind(root) {
                 it.contentDescription?.toString().equals(cd, ignoreCase = true)
-            }?.let { return it }
+            }?.let { lastWinningTier = "cd_exact"; return it }
         }
 
         // 4. text substring — covers "Send message" matching the literal "Send"
         selectors["text"]?.takeIf { it.isNotBlank() }?.let { txt ->
             walkFind(root) {
                 it.text?.toString()?.contains(txt, ignoreCase = true) == true
-            }?.let { return it }
+            }?.let { lastWinningTier = "text_substring"; return it }
         }
 
         // 5. contentDescription substring
         selectors["contentDescription"]?.takeIf { it.isNotBlank() }?.let { cd ->
             walkFind(root) {
                 it.contentDescription?.toString()?.contains(cd, ignoreCase = true) == true
-            }?.let { return it }
+            }?.let { lastWinningTier = "cd_substring"; return it }
         }
 
         // 6. className — very loose; only fires when the playbook really
         // means "any EditText on the screen"
         selectors["className"]?.takeIf { it.isNotBlank() }?.let { cn ->
-            walkFind(root) { it.className?.toString() == cn }?.let { return it }
+            walkFind(root) { it.className?.toString() == cn }?.let {
+                lastWinningTier = "className"; return it
+            }
         }
 
         return null
@@ -147,7 +168,7 @@ object ScreenTreeReader {
             }
         }
         val anchorIdx = clickables.indexOfFirst { it == anchor }
-        return when (direction) {
+        val picked = when (direction) {
             "next_clickable" -> {
                 if (anchorIdx < 0) clickables.firstOrNull()
                 else clickables.getOrNull(anchorIdx + 1)
@@ -158,6 +179,8 @@ object ScreenTreeReader {
             }
             else -> null
         }
+        if (picked != null) lastWinningTier = "sibling_anchor"
+        return picked
     }
 
     /**

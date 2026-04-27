@@ -78,6 +78,7 @@ async def record_outcome(
     failed_reason: str | None = None,
     duration_ms: int = 0,
     revision_id: UUID | None = None,
+    selector_tiers: dict[str, str] | None = None,
 ) -> ReliabilityUpdate | None:
     """Append the outcome row and Bayesian-update the playbook counters.
 
@@ -103,6 +104,7 @@ async def record_outcome(
                 outcome=outcome, failed_step_index=failed_step_index,
                 failed_reason=(failed_reason or None) and failed_reason[:200],
                 failure_class=cls,
+                selector_tiers=selector_tiers,
                 duration_ms=max(0, int(duration_ms)),
             )
         )

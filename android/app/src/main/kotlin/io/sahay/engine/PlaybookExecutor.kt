@@ -37,6 +37,21 @@ class PlaybookExecutor(
         data object Aborted : StepOutcome()
     }
 
+    /**
+     * Per-step record of which selector tier won the match. Populated by
+     * `tapWithFallback` / `typeWithFallback` from `ScreenTreeReader.lastWinningTier`
+     * after each successful selector resolution. The ActionRunner reads
+     * this map at the end of a run and ships it to the backend for the
+     * selector_trainer pipeline.
+     *
+     * Cleared on each new run via `resetSelectorTiers()` to avoid leaking
+     * tier wins across playbook executions.
+     */
+    private val selectorTiers = mutableMapOf<Int, String>()
+
+    fun resetSelectorTiers() { selectorTiers.clear() }
+    fun selectorTiersSnapshot(): Map<Int, String> = selectorTiers.toMap()
+
     suspend fun executeStep(step: PlannedStepOut, appPackage: String): StepOutcome {
         val rootPkg = service.rootInActiveWindow?.packageName?.toString()
         if (PaymentBlocklist.isBlocked(rootPkg)) return StepOutcome.Aborted
@@ -163,13 +178,16 @@ class PlaybookExecutor(
         // irreversible actions (send / delete / share / pay-adjacent).
         // For those, only exact selector or backend-resolver matches are allowed.
         val guess = if (step.confirmRequired) null else anyLikelyCandidate(step)
-        val node = waitForNode(step)
-            ?: askResolverFor(step, appPackage)
-            ?: guess
-            ?: return StepOutcome.Failed(
-                if (step.confirmRequired) "node_not_found_strict_confirm_required"
-                else "node_not_found"
-            )
+        val (node, tier) = run {
+            waitForNode(step)?.let { it to (ScreenTreeReader.lastWinningTier ?: "selector") }
+                ?: askResolverFor(step, appPackage)?.let { it to "resolver" }
+                ?: guess?.let { it to "fuzzy_keyword" }
+                ?: return StepOutcome.Failed(
+                    if (step.confirmRequired) "node_not_found_strict_confirm_required"
+                    else "node_not_found"
+                )
+        }
+        selectorTiers[step.step] = tier
         val action = if (longPress) AccessibilityNodeInfo.ACTION_LONG_CLICK
                      else AccessibilityNodeInfo.ACTION_CLICK
         var target: AccessibilityNodeInfo? = node
@@ -183,13 +201,16 @@ class PlaybookExecutor(
         // Confidence-floor: typing into a guessed field on a confirm-required step
         // could put the user's text into the wrong app's input. Strict on those.
         val guessField = if (step.confirmRequired) null else anyEditText()
-        val node = waitForNode(step)
-            ?: askResolverFor(step, appPackage)
-            ?: guessField
-            ?: return StepOutcome.Failed(
-                if (step.confirmRequired) "node_not_found_strict_confirm_required"
-                else "node_not_found"
-            )
+        val (node, tier) = run {
+            waitForNode(step)?.let { it to (ScreenTreeReader.lastWinningTier ?: "selector") }
+                ?: askResolverFor(step, appPackage)?.let { it to "resolver" }
+                ?: guessField?.let { it to "fuzzy_edittext" }
+                ?: return StepOutcome.Failed(
+                    if (step.confirmRequired) "node_not_found_strict_confirm_required"
+                    else "node_not_found"
+                )
+        }
+        selectorTiers[step.step] = tier
         val text = (step.params["text"] as? JsonPrimitive)?.contentOrNull
             ?: return StepOutcome.Failed("missing_text_param")
         val args = Bundle().apply {

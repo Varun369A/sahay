@@ -80,6 +80,14 @@ data class PlaybookOutcomeRequest(
     @SerialName("failed_reason") val failedReason: String? = null,
     @SerialName("duration_ms") val durationMs: Long = 0,
     @SerialName("revision_id") val revisionId: String? = null,
+    /**
+     * Map of (step_index → winning_selector_tier) for selector_trainer.
+     * Tier names: "viewId", "text_exact", "cd_exact", "text_substring",
+     * "cd_substring", "className", "sibling_anchor", "resolver",
+     * "fuzzy_keyword", "fuzzy_edittext".
+     * Step indexes are STRINGS for JSON wire compatibility.
+     */
+    @SerialName("selector_tiers") val selectorTiers: Map<String, String>? = null,
 )
 
 @Serializable
