@@ -5,6 +5,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sahay.data.api.ActionLogRequest
 import io.sahay.data.api.PlanRequest
 import io.sahay.data.api.PlannedStepOut
+import io.sahay.data.api.PlaybookOutcomeRequest
 import io.sahay.data.api.SahayApi
 import io.sahay.service.SahayAccessibilityService
 import io.sahay.ui.screens.confirm.ConfirmationActivity
@@ -71,6 +72,13 @@ class ActionRunner @Inject constructor(
 
         val started = System.currentTimeMillis()
 
+        // Track the first failed step so we can report a useful outcome
+        // back to the reliability tracker even though full-auto continues
+        // through subsequent steps.
+        var firstFailedStepIdx: Int? = null
+        var firstFailedReason: String? = null
+        var firstFailedWasExpect = false
+
         // FULL-AUTO MODE:
         //  • Foreground hijack = re-launch the target app, don't abort
         //  • Any failed step = log + continue to next (executor's internal
@@ -104,13 +112,23 @@ class ActionRunner @Inject constructor(
                         "ActionRunner",
                         "step_${step.step}_failed reason=${outcome.reason} — continuing anyway"
                     )
+                    if (firstFailedStepIdx == null) {
+                        firstFailedStepIdx = idx
+                        firstFailedReason = outcome.reason
+                        firstFailedWasExpect = outcome.reason.startsWith("expect_failed")
+                    }
                     // Full-auto: never give up. Move to the next step.
                     // If this is the last step and it failed, we'll log it
                     // after the loop ends; but we never abort mid-playbook.
                     continue
                 }
                 PlaybookExecutor.StepOutcome.Aborted -> {
-                    log(appPackage, intent, "aborted", System.currentTimeMillis() - started, userAborted = false, failureReason = "blocklist_or_kill_switch")
+                    val durationMs = System.currentTimeMillis() - started
+                    log(appPackage, intent, "aborted", durationMs, userAborted = false, failureReason = "blocklist_or_kill_switch")
+                    reportPlaybookOutcome(
+                        plan.playbookId, plan.revisionId,
+                        "aborted", null, "blocklist_or_kill_switch", durationMs,
+                    )
                     return@withContext RunResult(success = false, reason = "aborted")
                 }
                 PlaybookExecutor.StepOutcome.NeedsConfirmation -> {
@@ -121,8 +139,54 @@ class ActionRunner @Inject constructor(
             }
         }
 
-        log(appPackage, intent, "success", System.currentTimeMillis() - started)
-        RunResult(success = true)
+        val durationMs = System.currentTimeMillis() - started
+        if (firstFailedStepIdx == null) {
+            log(appPackage, intent, "success", durationMs)
+            reportPlaybookOutcome(
+                plan.playbookId, plan.revisionId,
+                "success", null, null, durationMs,
+            )
+            RunResult(success = true)
+        } else {
+            // At least one step failed but we ran the rest. Distinguish
+            // verifier failures from generic failures so the score table
+            // can tell "playbook is broken" from "verifier was too strict".
+            val outcomeKind = if (firstFailedWasExpect) "expect_failed" else "failed"
+            log(appPackage, intent, outcomeKind, durationMs, failureReason = firstFailedReason)
+            reportPlaybookOutcome(
+                plan.playbookId, plan.revisionId,
+                outcomeKind, firstFailedStepIdx, firstFailedReason, durationMs,
+            )
+            // Surface success=true to the caller because full-auto completed
+            // the run, but the reliability layer has already counted this as
+            // a fail so the score reflects reality.
+            RunResult(success = true, reason = "completed_with_fail:${firstFailedReason}")
+        }
+    }
+
+    private suspend fun reportPlaybookOutcome(
+        playbookId: String?,
+        revisionId: String?,
+        outcome: String,
+        failedStepIndex: Int?,
+        failedReason: String?,
+        durationMs: Long,
+    ) {
+        if (playbookId.isNullOrBlank()) return   // vision-sourced plan, nothing to score
+        runCatching {
+            api.reportPlaybookOutcome(
+                PlaybookOutcomeRequest(
+                    playbookId = playbookId,
+                    outcome = outcome,
+                    failedStepIndex = failedStepIndex,
+                    failedReason = failedReason?.take(200),
+                    durationMs = durationMs.coerceAtLeast(0),
+                    revisionId = revisionId,
+                )
+            )
+        }.onFailure {
+            android.util.Log.w("ActionRunner", "reliability_report_failed: ${it.message}")
+        }
     }
 
     private suspend fun log(

@@ -34,6 +34,7 @@ data class SettingsState(
     val dndImportanceThreshold: Int = 8,
     val quietHoursWhisper: Boolean = true,
     val morningBriefingEnabled: Boolean = false,
+    val screenshotUploadEnabled: Boolean = false,
     val role: String? = null,
     val mood: String? = null,
     val isLoading: Boolean = false,
@@ -98,6 +99,7 @@ class SettingsViewModel @Inject constructor(
                     dndImportanceThreshold = snap.dndImportanceThreshold,
                     quietHoursWhisper = snap.quietHoursWhisper,
                     morningBriefingEnabled = snap.morningBriefingEnabled,
+                    screenshotUploadEnabled = snap.screenshotUploadEnabled,
                 )
             }
         }
@@ -208,6 +210,11 @@ class SettingsViewModel @Inject constructor(
     fun setMorningBriefingEnabled(value: Boolean) {
         _state.update { it.copy(morningBriefingEnabled = value) }
         viewModelScope.launch { prefs.setMorningBriefingEnabled(value) }
+    }
+
+    fun setScreenshotUploadEnabled(value: Boolean) {
+        _state.update { it.copy(screenshotUploadEnabled = value) }
+        viewModelScope.launch { prefs.setScreenshotUploadEnabled(value) }
     }
 
     fun setRole(roleKey: String) {

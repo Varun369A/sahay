@@ -41,19 +41,76 @@ class PlaybookExecutor(
         val rootPkg = service.rootInActiveWindow?.packageName?.toString()
         if (PaymentBlocklist.isBlocked(rootPkg)) return StepOutcome.Aborted
 
-        return when (step.action) {
-            "launch" -> launchApp(step)
-            "tap" -> tapWithFallback(step, appPackage, longPress = false)
-            "long_press" -> tapWithFallback(step, appPackage, longPress = true)
-            "type" -> typeWithFallback(step, appPackage)
-            "back" -> { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); StepOutcome.Success }
-            "home" -> { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); StepOutcome.Success }
-            "wait" -> { delay(step.timeoutMs.toLong()); StepOutcome.Success }
-            "verify" -> verify(step, appPackage)
-            "read" -> StepOutcome.Success
-            "swipe" -> StepOutcome.Failed("swipe_not_implemented_v1")
-            else -> StepOutcome.Failed("unknown_action:${step.action}")
+        // Resolve via the canonical enum so a typo in the playbook (or a
+        // backend rename that didn't propagate) becomes a loud, traceable
+        // failure instead of a silent no-op.
+        val action = PlaybookAction.fromWire(step.action)
+            ?: return StepOutcome.Failed("unknown_action:${step.action}")
+
+        // Snapshot the screen BEFORE the action so a `screen_changed`
+        // expectation has something to compare against. Only computed when
+        // an expectation needs it.
+        val beforeHash =
+            if (step.expect?.let { ExpectKind.fromWire(it.kind) } == ExpectKind.SCREEN_CHANGED)
+                StepVerifier.snapshotHash(service.rootInActiveWindow)
+            else null
+
+        val outcome = when (action) {
+            PlaybookAction.LAUNCH      -> launchApp(step)
+            PlaybookAction.TAP         -> tapWithFallback(step, appPackage, longPress = false)
+            PlaybookAction.LONG_PRESS  -> tapWithFallback(step, appPackage, longPress = true)
+            PlaybookAction.TYPE        -> typeWithFallback(step, appPackage)
+            PlaybookAction.SWIPE       -> swipe(step)
+            PlaybookAction.WAIT        -> { delay(step.timeoutMs.toLong()); StepOutcome.Success }
+            PlaybookAction.VERIFY      -> verify(step, appPackage)
+            PlaybookAction.READ        -> StepOutcome.Success
+            PlaybookAction.BACK        -> {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                StepOutcome.Success
+            }
+            PlaybookAction.HOME        -> {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                StepOutcome.Success
+            }
         }
+
+        // Verify post-condition. Only runs when the action itself didn't
+        // already fail — no point checking expectations against a step we
+        // know didn't happen.
+        val expect = step.expect
+        if (outcome is StepOutcome.Success && expect != null) {
+            val result = StepVerifier.verify(service, expect, beforeHash = beforeHash)
+            if (!result.passed) {
+                Log.w(TAG, "step_expect_failed step=${step.step} kind=${expect.kind}")
+                return StepOutcome.Failed("expect_failed:${result.reason}")
+            }
+        }
+        return outcome
+    }
+
+    /**
+     * Implements the playbook `swipe` action. Reads `params.direction`
+     * (up|down|left|right) and optional `params.distance` (px, default 500).
+     * Falls back to a vertical scroll if direction is missing/unknown so
+     * generic "scroll down to find X" steps still make progress.
+     */
+    private suspend fun swipe(step: PlannedStepOut): StepOutcome {
+        val direction = (step.params["direction"] as? JsonPrimitive)?.contentOrNull?.lowercase()
+        val dist = ((step.params["distance"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+            ?: 500).coerceIn(50, 2000)
+        val metrics = service.resources.displayMetrics
+        val cx = metrics.widthPixels / 2
+        val cy = metrics.heightPixels / 2
+        val (fromX, fromY, toX, toY) = when (direction) {
+            "up"    -> listOf(cx, cy + dist / 2, cx, cy - dist / 2)
+            "down"  -> listOf(cx, cy - dist / 2, cx, cy + dist / 2)
+            "left"  -> listOf(cx + dist / 2, cy, cx - dist / 2, cy)
+            "right" -> listOf(cx - dist / 2, cy, cx + dist / 2, cy)
+            null    -> listOf(cx, cy + dist / 2, cx, cy - dist / 2)  // default: scroll down
+            else    -> return StepOutcome.Failed("swipe_bad_direction:$direction")
+        }
+        val ok = GestureDispatcher.swipe(service, fromX, fromY, toX, toY)
+        return if (ok) StepOutcome.Success else StepOutcome.Failed("swipe_rejected")
     }
 
     // ─── Action impls ────────────────────────────────────────────────
@@ -102,10 +159,17 @@ class PlaybookExecutor(
         appPackage: String,
         longPress: Boolean,
     ): StepOutcome {
+        // Confidence-floor: never let `anyLikelyCandidate` guess on
+        // irreversible actions (send / delete / share / pay-adjacent).
+        // For those, only exact selector or backend-resolver matches are allowed.
+        val guess = if (step.confirmRequired) null else anyLikelyCandidate(step)
         val node = waitForNode(step)
             ?: askResolverFor(step, appPackage)
-            ?: anyLikelyCandidate(step)             // last-ditch: best-effort guess on screen
-            ?: return StepOutcome.Failed("node_not_found")
+            ?: guess
+            ?: return StepOutcome.Failed(
+                if (step.confirmRequired) "node_not_found_strict_confirm_required"
+                else "node_not_found"
+            )
         val action = if (longPress) AccessibilityNodeInfo.ACTION_LONG_CLICK
                      else AccessibilityNodeInfo.ACTION_CLICK
         var target: AccessibilityNodeInfo? = node
@@ -116,10 +180,16 @@ class PlaybookExecutor(
     }
 
     private suspend fun typeWithFallback(step: PlannedStepOut, appPackage: String): StepOutcome {
+        // Confidence-floor: typing into a guessed field on a confirm-required step
+        // could put the user's text into the wrong app's input. Strict on those.
+        val guessField = if (step.confirmRequired) null else anyEditText()
         val node = waitForNode(step)
             ?: askResolverFor(step, appPackage)
-            ?: anyEditText()                        // last-ditch: any editable field on screen
-            ?: return StepOutcome.Failed("node_not_found")
+            ?: guessField
+            ?: return StepOutcome.Failed(
+                if (step.confirmRequired) "node_not_found_strict_confirm_required"
+                else "node_not_found"
+            )
         val text = (step.params["text"] as? JsonPrimitive)?.contentOrNull
             ?: return StepOutcome.Failed("missing_text_param")
         val args = Bundle().apply {
@@ -131,27 +201,66 @@ class PlaybookExecutor(
         return if (ok) StepOutcome.Success else StepOutcome.Failed("set_text_failed")
     }
 
-    /** Last-ditch clickable finder — any clickable node matching the step's description keywords. */
+    /**
+     * Last-ditch clickable finder — any clickable node matching the step's description keywords.
+     *
+     * Confidence-floor rules (added to prevent wrong-clicks):
+     *   1. The winning node must match at least MIN_KEYWORD_HITS keywords.
+     *   2. The winner must beat the runner-up by at least MIN_LEAD hits — a tied
+     *      score means the screen has multiple plausible targets and we must NOT
+     *      silently pick one.
+     *   3. The candidate keyword pool must itself be specific enough
+     *      (>= MIN_DISTINCT_KEYWORDS distinct words). One generic keyword like
+     *      "open" is not a license to click whatever has "open" in its text.
+     * If any check fails we return null — caller treats this as a hard miss.
+     */
     private fun anyLikelyCandidate(step: PlannedStepOut): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
         val keywords = extractKeywords(step)
-        if (keywords.isEmpty()) return null
+        if (keywords.size < MIN_DISTINCT_KEYWORDS) {
+            Log.i(TAG, "anyLikelyCandidate rejected — too few keywords (${keywords.size})")
+            return null
+        }
 
         // Walk the tree, score each clickable node by keyword overlap.
+        // Track the runner-up so we can require a clear winner.
         val stack = ArrayDeque<AccessibilityNodeInfo>()
         stack.addLast(root)
         var best: AccessibilityNodeInfo? = null
         var bestScore = 0
+        var runnerUpScore = 0
         while (stack.isNotEmpty()) {
             val n = stack.removeLast()
             if (n.isClickable || n.isFocusable) {
-                val text = (n.text?.toString() ?: "") + " " + (n.contentDescription?.toString() ?: "")
+                val text = (n.text?.toString() ?: "") + " " +
+                           (n.contentDescription?.toString() ?: "")
                 val score = keywords.count { text.contains(it, ignoreCase = true) }
-                if (score > bestScore) { best = n; bestScore = score }
+                when {
+                    score > bestScore -> {
+                        runnerUpScore = bestScore
+                        bestScore = score
+                        best = n
+                    }
+                    score == bestScore && best != null && n != best -> {
+                        runnerUpScore = score
+                    }
+                    score in (runnerUpScore + 1)..bestScore -> {
+                        runnerUpScore = score
+                    }
+                }
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let(stack::addLast)
         }
-        if (best != null) Log.i(TAG, "anyLikelyCandidate picked score=$bestScore text='${best.text}'")
+
+        if (best == null || bestScore < MIN_KEYWORD_HITS) {
+            Log.i(TAG, "anyLikelyCandidate rejected — best=$bestScore floor=$MIN_KEYWORD_HITS")
+            return null
+        }
+        if (bestScore - runnerUpScore < MIN_LEAD) {
+            Log.i(TAG, "anyLikelyCandidate rejected — ambiguous best=$bestScore runner=$runnerUpScore")
+            return null
+        }
+        Log.i(TAG, "anyLikelyCandidate picked score=$bestScore (runner=$runnerUpScore) text='${best.text}'")
         return best
     }
 
@@ -249,5 +358,12 @@ class PlaybookExecutor(
             "from", "into", "this", "that", "app", "screen", "page", "if", "else",
             "first", "matching", "navigation", "bottom", "top", "icon",
         )
+
+        // Confidence-floor knobs for the last-ditch keyword guesser. A wrong
+        // tap here on a "Send" / "Delete" / "Pay" button is the worst-case
+        // user experience; conservative defaults keep the false-tap rate low.
+        const val MIN_DISTINCT_KEYWORDS = 2   // step desc must yield ≥2 specific words
+        const val MIN_KEYWORD_HITS = 2        // winner must match ≥2 of those
+        const val MIN_LEAD = 1                // winner must beat runner-up by ≥1
     }
 }

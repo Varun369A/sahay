@@ -19,9 +19,11 @@ import io.sahay.R
 import io.sahay.data.secrets.UserPreferences
 import io.sahay.engine.TaskQueue
 import io.sahay.engine.TaskWorker
+import io.sahay.voice.AcousticContext
 import io.sahay.voice.AudioRecorder
 import io.sahay.voice.SarvamSttClient
 import io.sahay.voice.VoskModelManager
+import io.sahay.voice.WakeTelemetry
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,10 @@ class WakeWordService : Service() {
     @Inject lateinit var stt: SarvamSttClient
     @Inject lateinit var voskModel: VoskModelManager
     @Inject lateinit var tts: io.sahay.voice.TtsClient
+    @Inject lateinit var acoustic: AcousticContext
+    @Inject lateinit var telemetry: WakeTelemetry
+
+    @Volatile private var matchMode: WakeTelemetry.MatchMode = WakeTelemetry.MatchMode.LENIENT
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
@@ -154,7 +160,11 @@ class WakeWordService : Service() {
 
         audio.startRecording()
         val buf = ByteArray(bufSize)
-        Log.i(TAG, "wake_loop_started")
+        // Pull the auto-tuned match mode once at loop start; refreshed
+        // after each capture so user-felt drift takes effect within
+        // ~10s, not the next process restart.
+        matchMode = telemetry.matchMode()
+        Log.i(TAG, "wake_loop_started match_mode=$matchMode")
 
         try {
             while (scope.isActive) {
@@ -171,7 +181,11 @@ class WakeWordService : Service() {
                         recognizer.reset()
                         triggerCapture()
                     }
-                } else {
+                } else if (matchMode == WakeTelemetry.MatchMode.LENIENT) {
+                    // Partial-match path: only used in LENIENT mode. In
+                    // STRICT mode (auto-engaged when FP rate ≥ 30%) we
+                    // require a final recognition before firing — partials
+                    // are the dominant source of background-speech FPs.
                     val txt = extractText(recognizer.partialResult, key = "partial")
                     if (txt.isNotBlank() && matchesWake(txt)) {
                         Log.i(TAG, "wake_partial='$txt'")
@@ -193,6 +207,18 @@ class WakeWordService : Service() {
 
     private fun triggerCapture() {
         if (awake) return
+
+        // Acoustic context guard — block triggers that fire during a call
+        // or while music/video is playing. This is where the bulk of TV-
+        // dialogue and podcast false positives die.
+        val decision = acoustic.check()
+        if (decision is AcousticContext.Decision.Block) {
+            Log.i(TAG, "trigger_blocked reason=${decision.reason}")
+            // Count this as a false positive so the auto-tuner sees it.
+            scope.launch { telemetry.recordTrigger(accepted = false) }
+            return
+        }
+
         awake = true
         // Barge-in: if Sahay is talking when the user says the wake word,
         // shut up immediately so the user isn't talking over themself.
@@ -200,6 +226,7 @@ class WakeWordService : Service() {
         runCatching { tts.stopSpeaking() }
         captureJob?.cancel()
         captureJob = scope.launch {
+            var accepted = false
             try {
                 updateNotif("Listening to your command…")
                 val wav = recorder.record(maxMillis = 10_000)
@@ -213,12 +240,20 @@ class WakeWordService : Service() {
                 val cleaned = stripWakeWords(transcription.text)
                 Log.i(TAG, "captured text='$cleaned' (raw='${transcription.text}')")
                 if (cleaned.isNotBlank()) {
+                    accepted = true
                     queue.submit(TaskQueue.Task.Utterance(
                         text = cleaned,
                         locale = transcription.language,
                     ))
                 }
             } finally {
+                // Telemetry runs regardless of success/failure path.
+                // accepted=false signals "wake fired but no real command
+                // followed" — the strongest false-positive signal we
+                // have without explicit user feedback.
+                runCatching { telemetry.recordTrigger(accepted) }
+                // Refresh strict/lenient mode for the next match.
+                matchMode = telemetry.matchMode()
                 awake = false
                 updateNotif("Sahay listening — say \"${wakePhrases.first()}\"")
             }

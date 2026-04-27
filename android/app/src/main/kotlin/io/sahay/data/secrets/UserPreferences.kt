@@ -52,6 +52,12 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         // Morning briefing — spoken on first unlock of the day.
         val MorningBriefingEnabled = booleanPreferencesKey("morning_briefing_enabled")
         val LastBriefingAtMs = longPreferencesKey("last_briefing_at_ms")
+
+        // Screenshot upload toggle. Default OFF — the agent works from the
+        // accessibility tree alone unless the user explicitly opts in.
+        // README's "screen content never leaves the device" claim depends
+        // on this default holding.
+        val ScreenshotUploadEnabled = booleanPreferencesKey("screenshot_upload_enabled")
     }
 
     val assistantName: Flow<String> = context.dataStore.data.map {
@@ -91,6 +97,9 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     val lastBriefingAtMs: Flow<Long> = context.dataStore.data.map {
         it[Keys.LastBriefingAtMs] ?: 0L
     }
+    val screenshotUploadEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.ScreenshotUploadEnabled] ?: false        // OFF by default
+    }
 
     suspend fun setAssistantName(value: String) = context.dataStore.edit {
         it[Keys.AssistantName] = value.ifBlank { "Sahay" }
@@ -125,6 +134,9 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
     suspend fun setLastBriefingAtMs(value: Long) = context.dataStore.edit {
         it[Keys.LastBriefingAtMs] = value
     }
+    suspend fun setScreenshotUploadEnabled(value: Boolean) = context.dataStore.edit {
+        it[Keys.ScreenshotUploadEnabled] = value
+    }
 
     suspend fun snapshot(): Snapshot {
         val data = context.dataStore.data.first()
@@ -140,6 +152,7 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
             quietHoursWhisper = data[Keys.QuietHoursWhisper] ?: true,
             morningBriefingEnabled = data[Keys.MorningBriefingEnabled] ?: false,
             lastBriefingAtMs = data[Keys.LastBriefingAtMs] ?: 0L,
+            screenshotUploadEnabled = data[Keys.ScreenshotUploadEnabled] ?: false,
         )
     }
 
@@ -155,5 +168,6 @@ class UserPreferences @Inject constructor(@ApplicationContext private val contex
         val quietHoursWhisper: Boolean = true,
         val morningBriefingEnabled: Boolean = false,
         val lastBriefingAtMs: Long = 0L,
+        val screenshotUploadEnabled: Boolean = false,
     )
 }

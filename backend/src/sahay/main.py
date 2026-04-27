@@ -29,6 +29,7 @@ from sahay.routers import (
     agent,
     auth,
     briefing,
+    dashboard,
     documents,
     files,
     health,
@@ -135,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router)
     app.include_router(briefing.router)
     app.include_router(tts.router)
+    app.include_router(dashboard.router)
 
     # Global error handler — never leak stack traces in production.
     @app.exception_handler(Exception)

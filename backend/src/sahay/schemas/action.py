@@ -34,6 +34,13 @@ class PlanResponse(BaseModel):
     needs_per_step_confirm: bool
     requires_inputs: list[str] = Field(default_factory=list)
     notes: str | None = None
+    # Set when the plan was sourced from a stored playbook. The device
+    # uses this to report the run outcome via /v1/playbooks/outcome.
+    playbook_id: str | None = None
+    # Set when the served spec came from a canary revision instead of
+    # the parent playbook's live spec. The device echoes this back on
+    # outcome so canary counters get the right credit.
+    revision_id: str | None = None
 
 
 class ActionLogRequest(BaseModel):

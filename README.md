@@ -18,11 +18,12 @@ Each playbook is built once per app and shared across all users (with strict pri
 
 ## Privacy boundary (non-negotiable)
 
-- Screen content (messages, contacts, photos) **never leaves the device**
-- Backend receives only abstract intents (`{app, intent, screen_state_hash, outcome}`)
-- Per-user "compressed memory profile" lives in the cloud (~2KB, no PII)
-- All local data encrypted at rest (SQLCipher)
-- One-tap data deletion (DPDP + GDPR compliant)
+- **Screenshots are OFF by default.** The agent works from the Android accessibility tree (UI labels, button text, view hierarchy) alone. Screen pixels never leave the device unless the user explicitly opts in via Settings → Privacy → "Send screenshots to assist".
+- **Even when opted in, screenshots are blocked for payment/banking apps.** GPay, PhonePe, Paytm, banking apps are hard-blocked end-to-end.
+- **PII is tokenized before it reaches Claude.** Phone numbers, emails, OTPs, UPI IDs, Aadhaar, PAN, card numbers are replaced with stable tokens (`<PHONE_0>`, `<EMAIL_2>`, …) by an on-server firewall. Claude reasons about entities, never raw values.
+- Per-user "compressed memory profile" lives in the cloud (~2KB, no PII).
+- All local data encrypted at rest (SQLCipher).
+- One-tap data deletion (DPDP + GDPR compliant).
 
 ## Layout
 

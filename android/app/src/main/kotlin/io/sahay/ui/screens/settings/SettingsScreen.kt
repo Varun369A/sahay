@@ -125,6 +125,34 @@ fun SettingsScreen(onLoggedOut: () -> Unit) {
             }
         }
 
+        // ─── Privacy: screenshot upload (off by default) ────────────
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Privacy", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Send screenshots to assist",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            "Off by default. When off, Sahay works only from " +
+                                "the on-screen text and buttons it can read — your " +
+                                "screen pixels never leave the device. Turn on only " +
+                                "if Sahay is missing visual context for a task.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.screenshotUploadEnabled,
+                        onCheckedChange = vm::setScreenshotUploadEnabled,
+                    )
+                }
+            }
+        }
+
         // ─── Role picker (tailors tone + doc templates) ─────────────
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {

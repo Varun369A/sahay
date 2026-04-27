@@ -14,10 +14,13 @@ from sahay.schemas.playbook import (
     PlaybookContributeRequest,
     PlaybookLookupRequest,
     PlaybookOut,
+    PlaybookOutcomeRequest,
+    PlaybookOutcomeResponse,
     PlaybookSummary,
 )
 from sahay.services.playbook_ingestor import get_playbook, ingest_playbook
 from sahay.services.rate_limiter import rate_limit
+from sahay.services.reliability_tracker import record_outcome
 from sahay.util.logging import get_logger
 
 router = APIRouter(prefix="/v1/playbooks", tags=["playbooks"])
@@ -79,6 +82,51 @@ async def contribute(
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from None
     return PlaybookOut.model_validate(pb)
+
+
+@router.post(
+    "/outcome",
+    response_model=PlaybookOutcomeResponse,
+    dependencies=[Depends(rate_limit("playbooks_write", per_minute=60))],
+)
+async def outcome(
+    body: PlaybookOutcomeRequest,
+    db: AsyncSession = Depends(get_db_session),
+    user: User = Depends(current_user),
+) -> PlaybookOutcomeResponse:
+    """Record one playbook-run outcome from the device. Drives the
+    closed-loop Bayesian reliability score on the parent playbook."""
+    update = await record_outcome(
+        db,
+        user_id=user.id,
+        playbook_id=body.playbook_id,
+        outcome=body.outcome,
+        failed_step_index=body.failed_step_index,
+        failed_reason=body.failed_reason,
+        duration_ms=body.duration_ms,
+        revision_id=body.revision_id,
+    )
+    if update is None:
+        # Either an unknown outcome bucket or the playbook row is gone.
+        # Re-read the (possibly missing) playbook to give the client the
+        # current numbers anyway.
+        pb = await db.scalar(select(Playbook).where(Playbook.id == body.playbook_id))
+        if pb is None:
+            raise HTTPException(404, "playbook_not_found")
+        return PlaybookOutcomeResponse(
+            counted=False,
+            success_count=pb.success_count,
+            fail_count=pb.fail_count,
+            expect_fail_count=pb.expect_fail_count,
+            reliability_score=float(pb.reliability_score),
+        )
+    return PlaybookOutcomeResponse(
+        counted=True,
+        success_count=update.new_success,
+        fail_count=update.new_fail,
+        expect_fail_count=update.new_expect_fail,
+        reliability_score=update.new_score,
+    )
 
 
 @router.get(

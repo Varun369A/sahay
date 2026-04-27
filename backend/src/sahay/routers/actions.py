@@ -88,6 +88,8 @@ async def plan_action(
         needs_per_step_confirm=plan.needs_per_step_confirm,
         requires_inputs=plan.requires_inputs,
         notes=plan.notes,
+        playbook_id=plan.playbook_id,
+        revision_id=plan.revision_id,
     )
 
 

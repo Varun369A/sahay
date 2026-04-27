@@ -64,3 +64,6 @@ logs/
 # Local DBs
 *.sqlite3
 *.db
+
+# Stray screenshot folders (e.g. WhatsApp dumps used as references during dev)
+/netflix/

@@ -43,3 +43,29 @@ class PlaybookSummary(BaseModel):
     intent: str
     reliability_score: float
     popularity: int
+
+
+class PlaybookOutcomeRequest(BaseModel):
+    """Posted by the device at the end of every playbook execution.
+
+    Drives `services.reliability_tracker.record_outcome` — Bayesian update
+    on the parent playbook plus a row in `playbook_run_outcomes`.
+    """
+    playbook_id: UUID
+    outcome: str = Field(min_length=1, max_length=32)
+    failed_step_index: int | None = Field(default=None, ge=0)
+    failed_reason: str | None = Field(default=None, max_length=200)
+    duration_ms: int = Field(default=0, ge=0)
+    # When set, this run was served from a canary revision; outcome
+    # attribution credits THAT revision's counters instead of (or in
+    # addition to) the parent's live counters.
+    revision_id: UUID | None = None
+
+
+class PlaybookOutcomeResponse(BaseModel):
+    """Echoed back so the client can show the user the new reliability."""
+    counted: bool
+    success_count: int
+    fail_count: int
+    expect_fail_count: int
+    reliability_score: float

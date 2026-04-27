@@ -44,6 +44,7 @@ class AgentLoop @Inject constructor(
     private val api: SahayApi,
     private val tts: TtsClient,
     private val prefs: UserPreferences,
+    private val idempotency: IdempotencyTracker,
 ) {
 
     data class Outcome(
@@ -68,7 +69,9 @@ class AgentLoop @Inject constructor(
         tts.init()
 
         val conversationId = UUID.randomUUID().toString()
-        val assistantName = prefs.snapshot().assistantName
+        val snap = prefs.snapshot()
+        val assistantName = snap.assistantName
+        val screenshotUploadEnabled = snap.screenshotUploadEnabled
 
         // Push Sahay off-screen so the agent doesn't see our own "Running:"
         // text and get confused into thinking the prior task is still going.
@@ -88,20 +91,29 @@ class AgentLoop @Inject constructor(
             }
 
             // 1. Observe
+            // Privacy: screenshot upload is OFF by default. Tree-only mode keeps
+            // the README's "screen content never leaves the device" claim true.
+            // The user can opt in via Settings → "Send screenshots to assist".
             val tree = ScreenTreeReader.summarize(service.rootInActiveWindow, maxNodes = 300)
-            val shot = ScreenCapture.capture(service)
+            val shot = if (screenshotUploadEnabled) ScreenCapture.capture(service) else null
+            // Even with the toggle on, never upload a screenshot of a payment app
+            // (the foreground-package check above already returns, but defence in depth).
             val currentPkg = service.rootInActiveWindow?.packageName?.toString()
+            val safeShot = if (PaymentBlocklist.isBlocked(currentPkg)) null else shot
+
+            val (obsW, obsH) = if (safeShot != null) safeShot.width to safeShot.height
+                               else sw to sh
 
             val obs = AgentObservation(
                 goal = goal,
                 conversationId = conversationId,
                 appPackage = currentPkg,
                 screenTreeSummary = tree,
-                screenshotBase64 = shot?.base64Png,
+                screenshotBase64 = safeShot?.base64Png,
                 stepIndex = step,
                 history = history.toList(),
-                screenWidth = shot?.width ?: sw,
-                screenHeight = shot?.height ?: sh,
+                screenWidth = obsW,
+                screenHeight = obsH,
                 assistantName = assistantName,
             )
 
@@ -125,7 +137,7 @@ class AgentLoop @Inject constructor(
             }
 
             // 3. Execute
-            val exec = execute(service, action)
+            val exec = execute(service, action, conversationId)
 
             history += buildJsonObject {
                 put("step", step)
@@ -168,6 +180,7 @@ class AgentLoop @Inject constructor(
     private suspend fun execute(
         service: AccessibilityService,
         action: AgentTool,
+        conversationId: String,
     ): ExecResult {
         return when (action.tool) {
             "tap_node" -> tapIndexedNode(service, action)
@@ -193,7 +206,7 @@ class AgentLoop @Inject constructor(
                 tts.speak(action.message ?: "")
                 ExecResult("ok", settleMs = 0)
             }
-            "reply_to_notification" -> replyToNotification(service, action)
+            "reply_to_notification" -> replyToNotification(service, action, conversationId)
             "ask_user" -> ExecResult("ask_user", settleMs = 0)
             "done" -> ExecResult("done", settleMs = 0)
             "give_up" -> ExecResult("give_up", settleMs = 0)
@@ -211,11 +224,24 @@ class AgentLoop @Inject constructor(
      * rest of the proactive flow uses.
      */
     private suspend fun replyToNotification(
-        service: AccessibilityService, action: AgentTool,
+        service: AccessibilityService, action: AgentTool, conversationId: String,
     ): ExecResult {
         val key = action.notificationKey.orEmpty()
         val text = action.text.orEmpty()
         if (key.isBlank() || text.isBlank()) return ExecResult("missing_reply_args")
+
+        // Dedup: a network blip / agent retry must NOT cause WhatsApp to
+        // send the same message twice. The key is stable for "this exact
+        // reply, in this conversation" so a deliberate "send again" in a
+        // new conversation still works.
+        val idempKey = IdempotencyTracker.keyFor(
+            "reply_to_notification", conversationId, key, text,
+        )
+        if (!idempotency.checkAndMark(idempKey)) {
+            android.util.Log.w(TAG, "duplicate_reply_suppressed key=${key.take(12)}")
+            tts.speak("Already sent that one.")
+            return ExecResult("duplicate_skipped", settleMs = 0)
+        }
 
         val outcome = io.sahay.service.NotificationReplyDispatcher.dispatch(
             service, keyPrefix = key, text = text,

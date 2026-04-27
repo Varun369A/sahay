@@ -72,6 +72,25 @@ data class PlaybookOut(
     @SerialName("updated_at") val updatedAt: String,
 )
 
+@Serializable
+data class PlaybookOutcomeRequest(
+    @SerialName("playbook_id") val playbookId: String,
+    val outcome: String,
+    @SerialName("failed_step_index") val failedStepIndex: Int? = null,
+    @SerialName("failed_reason") val failedReason: String? = null,
+    @SerialName("duration_ms") val durationMs: Long = 0,
+    @SerialName("revision_id") val revisionId: String? = null,
+)
+
+@Serializable
+data class PlaybookOutcomeResponse(
+    val counted: Boolean,
+    @SerialName("success_count") val successCount: Int,
+    @SerialName("fail_count") val failCount: Int,
+    @SerialName("expect_fail_count") val expectFailCount: Int,
+    @SerialName("reliability_score") val reliabilityScore: Double,
+)
+
 // ─── Actions ─────────────────────────────────────────────────────────
 
 @Serializable
@@ -94,6 +113,7 @@ data class PlannedStepOut(
     @SerialName("confirm_required") val confirmRequired: Boolean,
     @SerialName("timeout_ms") val timeoutMs: Int,
     @SerialName("on_failure") val onFailure: String? = null,
+    val expect: io.sahay.engine.Expectation? = null,
 )
 
 @Serializable
@@ -104,6 +124,8 @@ data class PlanResponse(
     @SerialName("needs_per_step_confirm") val needsPerStepConfirm: Boolean,
     @SerialName("requires_inputs") val requiresInputs: List<String> = emptyList(),
     val notes: String? = null,
+    @SerialName("playbook_id") val playbookId: String? = null,
+    @SerialName("revision_id") val revisionId: String? = null,
 )
 
 @Serializable

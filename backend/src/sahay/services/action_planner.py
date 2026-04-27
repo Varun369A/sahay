@@ -22,6 +22,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sahay.db.models import Playbook
+from sahay.services.canary_router import pick_active_revision
 from sahay.services.claude_client import complete
 from sahay.services.playbook_ingestor import get_playbook
 from sahay.util.logging import get_logger
@@ -63,6 +64,14 @@ class PlanResult:
     notes: str | None = None
     needs_per_step_confirm: bool = False
     requires_inputs: list[str] = field(default_factory=list)
+    # Carried back to the device so it knows which playbook to report
+    # the run outcome against. None when source == "vision".
+    playbook_id: str | None = None
+    # Set when the served spec came from a canary revision rather than
+    # the parent playbook's live spec. The device echoes this in the
+    # outcome request so the canary's success/fail counters get the
+    # right credit (and the parent doesn't).
+    revision_id: str | None = None
 
 
 # ─── Public API ──────────────────────────────────────────────────────
@@ -73,8 +82,61 @@ async def plan(db: AsyncSession, req: PlanRequest) -> PlanResult:
     pb = await get_playbook(db, req.app_package, req.intent, req.app_version)
 
     if pb is not None and float(pb.reliability_score) >= 0.7:
+        # Canary check: if a recent canary revision exists AND this
+        # user falls in the canary bucket, serve the canary spec
+        # instead of the parent. Outcome attribution downstream credits
+        # the canary's counters.
+        decision = await pick_active_revision(
+            db, playbook_id=pb.id, user_id=str(req.user_id),
+        )
+        if decision.use_canary and decision.spec_json is not None:
+            log.info(
+                "canary_served",
+                playbook_id=str(pb.id),
+                revision_id=str(decision.revision_id),
+                bucket=decision.bucket,
+            )
+            return _plan_from_canary_spec(
+                pb, decision.spec_json, decision.revision_id, req,
+            )
         return _plan_from_playbook(pb, req)
     return await _plan_from_vision(pb, req)
+
+
+def _plan_from_canary_spec(
+    pb: Playbook,
+    spec: dict[str, Any],
+    revision_id: UUID | None,
+    req: PlanRequest,
+) -> PlanResult:
+    """Same shape as `_plan_from_playbook` but the spec comes from a
+    canary `PlaybookRevision`. Reliability score reported to the client
+    is the parent's (canary doesn't yet have its own meaningful score)
+    so behaviour like `needs_per_step_confirm` stays sane during the
+    canary window."""
+    declared_inputs: list[str] = spec.get("inputs", [])
+    missing = [k for k in declared_inputs if k not in req.inputs]
+    if missing:
+        return PlanResult(
+            steps=[],
+            source="playbook",
+            reliability_score=float(pb.reliability_score),
+            playbook_id=str(pb.id),
+            revision_id=str(revision_id) if revision_id else None,
+            requires_inputs=missing,
+        )
+
+    raw_steps: list[dict[str, Any]] = spec.get("steps", [])
+    resolved = [_resolve_step(s, req.inputs) for s in raw_steps]
+    return PlanResult(
+        steps=resolved,
+        source="playbook",
+        reliability_score=float(pb.reliability_score),
+        playbook_id=str(pb.id),
+        revision_id=str(revision_id) if revision_id else None,
+        notes=spec.get("notes"),
+        needs_per_step_confirm=float(pb.reliability_score) < 0.9,
+    )
 
 
 # ─── Playbook path ───────────────────────────────────────────────────
@@ -90,6 +152,7 @@ def _plan_from_playbook(pb: Playbook, req: PlanRequest) -> PlanResult:
             steps=[],
             source="playbook",
             reliability_score=float(pb.reliability_score),
+        playbook_id=str(pb.id),
             requires_inputs=missing,
         )
 
@@ -99,6 +162,7 @@ def _plan_from_playbook(pb: Playbook, req: PlanRequest) -> PlanResult:
         steps=resolved,
         source="playbook",
         reliability_score=float(pb.reliability_score),
+        playbook_id=str(pb.id),
         notes=spec.get("notes"),
         needs_per_step_confirm=float(pb.reliability_score) < 0.9,
     )

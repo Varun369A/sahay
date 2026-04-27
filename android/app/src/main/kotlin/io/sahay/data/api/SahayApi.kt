@@ -49,6 +49,11 @@ interface SahayApi {
     @POST("/v1/playbooks/lookup")
     suspend fun lookupPlaybook(@Body body: PlaybookLookupRequest): PlaybookOut
 
+    @POST("/v1/playbooks/outcome")
+    suspend fun reportPlaybookOutcome(
+        @Body body: PlaybookOutcomeRequest,
+    ): PlaybookOutcomeResponse
+
     // ─── Actions ─────────────────────────────────────────────────────
     @POST("/v1/actions/plan")
     suspend fun planAction(@Body body: PlanRequest): PlanResponse

@@ -150,6 +150,16 @@ class Playbook(Base):
     reliability_score: Mapped[float] = mapped_column(
         Numeric(4, 3), default=0.0, nullable=False
     )
+    # Bayesian counters fed by `services.reliability_tracker.record_outcome`.
+    # `reliability_score` is recomputed as (success + 1) / (success + fail + 2)
+    # so the score has sane behaviour at low N (a brand-new playbook starts at
+    # 0.5, not 0 or 1) and converges to the real success rate as N grows.
+    # `expect_fail_count` is a subset of `fail_count` covering specifically
+    # the new verifier-driven failures — kept separate so we can tell "playbook
+    # is broken" apart from "verifier is too strict".
+    success_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expect_fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     popularity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_payment_app: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[created_at]
@@ -164,7 +174,98 @@ class Playbook(Base):
             "reliability_score >= 0 AND reliability_score <= 1",
             name="reliability_in_range",
         ),
+        CheckConstraint(
+            "success_count >= 0 AND fail_count >= 0 AND expect_fail_count >= 0 "
+            "AND expect_fail_count <= fail_count",
+            name="reliability_counts_sane",
+        ),
         Index("ix_playbooks_popularity", "popularity"),
+    )
+
+
+class PlaybookRunOutcome(Base):
+    """One row per playbook execution end. Drives reliability scoring and
+    feeds the nightly Opus-powered improvement loop.
+
+    Per-row, not per-step — step-level telemetry comes later in `step_outcomes`.
+    """
+
+    __tablename__ = "playbook_run_outcomes"
+
+    id: Mapped[uuid_pk]
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    playbook_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playbooks.id", ondelete="CASCADE"), nullable=False
+    )
+    # Free-text outcome code so we don't need a migration to add a new class.
+    # Common values: success, failed, expect_failed, aborted, give_up, max_steps
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    failed_step_index: Mapped[int | None] = mapped_column(Integer)
+    failed_reason: Mapped[str | None] = mapped_column(String(200))
+    # Structured class derived from `failed_reason` by
+    # `services.failure_classifier`. Null on success rows.
+    failure_class: Mapped[str | None] = mapped_column(String(32))
+    duration_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[created_at]
+
+    __table_args__ = (
+        Index("ix_playbook_run_outcomes_playbook_id", "playbook_id"),
+        Index("ix_playbook_run_outcomes_user_id", "user_id"),
+    )
+
+
+class PlaybookRevision(Base):
+    """Versioned, candidate playbook spec produced by the nightly Opus
+    improver (or by a human reviewer).
+
+    Lifecycle:
+        draft       → just created, not routed to any traffic
+        canary      → being tested against ~10% of runs (next task wires routing)
+        promoted    → became the active spec (replaces parent's steps_json)
+        rolled_back → did worse than the previous spec; archived
+
+    The aggregate counters (`success_count` / `fail_count`) are scoped to
+    the canary window so the promotion decision can compare apples to
+    apples against the parent playbook's pre-canary score.
+    """
+
+    __tablename__ = "playbook_revisions"
+
+    id: Mapped[uuid_pk]
+    playbook_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playbooks.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    spec_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="opus_improver"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="draft"
+    )
+    success_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Snapshot of the parent playbook's reliability_score at the moment
+    # this revision was promoted to canary. The promotion decision uses
+    # THIS, not the parent's live score, because the parent's score
+    # keeps moving from non-canary traffic during the canary window.
+    parent_score_baseline: Mapped[float | None] = mapped_column(Numeric(4, 3))
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[created_at]
+
+    __table_args__ = (
+        UniqueConstraint(
+            "playbook_id", "version", name="uq_playbook_revisions_pb_version"
+        ),
+        CheckConstraint(
+            "status IN ('draft','canary','promoted','rolled_back')",
+            name="playbook_revisions_status_valid",
+        ),
+        Index("ix_playbook_revisions_playbook_id", "playbook_id"),
+        Index("ix_playbook_revisions_status", "status"),
     )
 
 

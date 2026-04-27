@@ -398,24 +398,50 @@ _TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def _personalized_system(
+def _personalized_system_blocks(
     assistant_name: str,
     role: str | None = None,
     locale: str | None = None,
     mood: str | None = None,
-) -> str:
-    """Build the system prompt with the user's chosen assistant name,
-    role (what the user does), and mood (how the assistant should talk).
+) -> list[dict[str, Any]]:
+    """Build the system prompt as TWO cache-controlled blocks.
 
-    Mood defaults to "default" — a balanced, warm-but-efficient voice.
+    Why two blocks: Anthropic prompt caching is prefix-based. With the
+    previous single-block design, every distinct (role, mood, name)
+    combination produced a different cache key — 11 roles × 5 moods = 55
+    cache slots per name, and the bulk of the prompt (~3KB of static
+    rules) had to be re-read on every persona change.
+
+    The split:
+      • Block 1 — STATIC rules + tool preferences + security + reasoning.
+        Identical for every user → ONE cache slot serving the entire user
+        base. ~3KB cached.
+      • Block 2 — IDENTITY + role + mood. Per-user-config cache. ~500B.
+        Changes only when the user updates settings.
+
+    Net effect: a returning user hits BOTH cache breakpoints (whole system
+    cached, only `messages[]` is fresh tokens). A user who changes mood
+    hits only block 1 — re-reads ~500B instead of ~3.5KB.
     """
     role_block = _ROLE_BLOCKS.get((role or "other").lower(), _ROLE_BLOCKS["other"])
     mood_block = _MOOD_BLOCKS.get((mood or "default").lower(), _MOOD_BLOCKS["default"])
-    return _SYSTEM_TEMPLATE.format(
+    persona = _SYSTEM_PERSONA_TEMPLATE.format(
         name=assistant_name,
         role_block=role_block,
         mood_block=mood_block,
     )
+    return [
+        {
+            "type": "text",
+            "text": _SYSTEM_STATIC,
+            "cache_control": {"type": "ephemeral"},
+        },
+        {
+            "type": "text",
+            "text": persona,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
 
 
 # ─── Mood-adaptive personality fragments ─────────────────────────────
@@ -528,19 +554,15 @@ _ROLE_BLOCKS: dict[str, str] = {
 }
 
 
-_SYSTEM_TEMPLATE = """You are {name} — a highly-capable personal agent living inside one specific user's Android phone.
+# ─── System prompt — split for prefix-based prompt caching ────────────
+#
+# Block 1 (STATIC) is identical for every user, so it caches once across
+# the entire user base. Block 2 (PERSONA) is per-user-config and caches
+# per (name, role, mood) tuple. Reading order is: rules first → persona
+# second; modern LLMs handle this fine, and the rules don't reference
+# the agent's name (the IDENTITY section in PERSONA introduces it).
 
-IDENTITY
-────────
-Your name is {name}. This user picked it. You are loyal to this user alone. You address them directly when speaking; you do not refer to them in the third person.
-
-USER CONTEXT
-────────────
-{role_block}
-
-MOOD — HOW YOU TALK
-───────────────────
-{mood_block}
+_SYSTEM_STATIC = """You are a highly-capable personal agent living inside one specific user's Android phone. The user has picked a personal name for you, set a role context, and chosen how you should talk — those details follow this section.
 
 INTERACTIVITY — YOU ARE A LIVE ASSISTANT, NOT A SCRIPT
 ──────────────────────────────────────────────────────
@@ -657,6 +679,22 @@ HOW TO REASON (silently):
 """
 
 
+_SYSTEM_PERSONA_TEMPLATE = """IDENTITY
+────────
+Your name is {name}. This user picked it. You are loyal to this user alone. You address them directly when speaking; you do not refer to them in the third person.
+
+When you speak (`speak`, `ask_user`, `done`, `give_up`), use this name as your own — never refer to yourself as "the agent" or "the assistant".
+
+USER CONTEXT
+────────────
+{role_block}
+
+MOOD — HOW YOU TALK
+───────────────────
+{mood_block}
+"""
+
+
 def _select_model(obs: AgentObservation) -> str:
     """Haiku for normal turns; Sonnet when we really need vision reasoning."""
     tree_len = len(obs.screen_tree_summary or "")
@@ -671,6 +709,67 @@ def _select_model(obs: AgentObservation) -> str:
     return settings.claude_model_default              # Haiku 4.5
 
 
+# Tools that legitimately repeat without indicating a stuck loop. A
+# multi-line `speak` or two consecutive `wait`s is not a sign the agent
+# is broken; tapping the same node twice with no progress IS.
+_NON_STUCK_TOOLS: frozenset[str] = frozenset({
+    "speak", "ask_user", "wait", "done", "give_up",
+    "remember", "forget", "note_followup", "stage_reply",
+    "create_document",
+})
+
+
+def _detect_stuck(prior_turns: list[Turn]) -> Turn | None:
+    """Detect if the agent is in a no-progress loop.
+
+    Returns the offending repeated turn (for the prompt notice) or None.
+
+    Rule: the LAST TWO physical-action turns are identical in `tool` AND
+    `args_summary`, and their outcome was not `done`. The system prompt
+    already tells the model "don't repeat yourself"; this is the
+    server-side enforcement that fires when the model didn't listen.
+
+    We check the last two prior turns because the system records each
+    dispatched action immediately after the Claude call — so by the time
+    we're entering the NEXT turn, the most recent two entries are the
+    last two attempts the agent has actually made.
+    """
+    physical = [
+        t for t in prior_turns
+        if t.tool not in _NON_STUCK_TOOLS
+    ]
+    if len(physical) < 2:
+        return None
+    a, b = physical[-2], physical[-1]
+    if a.tool != b.tool:
+        return None
+    if a.args_summary != b.args_summary:
+        return None
+    if b.outcome == "done":
+        return None
+    return b
+
+
+_STUCK_NOTICE_TEMPLATE = """\
+STUCK DETECTED — the last two attempts on this task were identical and \
+did not advance:
+
+  attempt: {tool}({args})
+
+This means the current approach is NOT working. Do NOT emit the same \
+tool with the same target a third time. Pick a genuinely DIFFERENT path:
+  • A different node from the tree (try a sibling, a parent, or scroll \
+to reveal more)
+  • Press back/home and re-enter via open_app
+  • If the screen has a dialog, dismiss it first
+  • If you cannot find a clear next step, ask_user with a tight, specific \
+question
+
+You are running on the most capable model right now (Opus). Use it: \
+think carefully, then emit ONE different tool call.
+"""
+
+
 def _build_user_content(
     obs: AgentObservation,
     *,
@@ -681,6 +780,7 @@ def _build_user_content(
     plan_block: str = "(no plan — proceed step-by-step)",
     notifications_block: str = "(no recent notifications)",
     draft_block: str | None = None,
+    stuck_notice: str | None = None,
 ) -> list[dict[str, Any]]:
     """Multimodal content blocks for Anthropic messages API.
 
@@ -693,7 +793,9 @@ def _build_user_content(
     parts: list[dict[str, Any]] = []
 
     draft_suffix = f"\n\n{draft_block}" if draft_block else ""
+    stuck_prefix = f"{stuck_notice}\n\n" if stuck_notice else ""
     textual = (
+        f"{stuck_prefix}"
         f"GOAL:\n{scrubbed_goal}\n\n"
         f"Current foreground app: {obs.app_package or 'unknown'}\n"
         f"Screen dimensions: {obs.screen_width}x{obs.screen_height}\n\n"
@@ -928,6 +1030,17 @@ async def step(
     prior = await memory.history(user_id, obs.conversation_id, max_turns=12)
     conv_block = format_for_prompt(prior)
 
+    # ── Stuck detection: same physical action twice in a row → escalate
+    # this ONE turn to Opus 4.7 with a temperature bump. Cheaper than
+    # giving up; Opus reasoning frequently breaks loops Haiku can't.
+    stuck_turn = _detect_stuck(prior)
+    stuck_notice: str | None = None
+    if stuck_turn is not None:
+        stuck_notice = _STUCK_NOTICE_TEMPLATE.format(
+            tool=stuck_turn.tool,
+            args=stuck_turn.args_summary[:120],
+        )
+
     # ── Long-term memory: top-K facts about this user ──
     ltm_block = "(no stored memories yet)"
     if db is not None:
@@ -1012,6 +1125,14 @@ async def step(
 
     # ── Model selection ──
     model = _select_model(obs)
+    # Stuck-rescue override: force the most-capable model + a small
+    # temperature bump so we don't redraw the same broken tool call.
+    # This is strictly one turn; the next observation goes through
+    # `_select_model` again as normal.
+    rescue_temperature = 0.0
+    if stuck_notice is not None:
+        model = settings.claude_model_ingestion       # Opus 4.7
+        rescue_temperature = 0.3
     client = _get_client()
 
     # ── Tool set: device tools + server-side web_search (localised) ──
@@ -1025,16 +1146,12 @@ async def step(
     # 512 cap we used before web research shipped.
     msg: Message = await client.messages.create(
         model=model,
-        system=[{
-            "type": "text",
-            "text": _personalized_system(
-                obs.assistant_name,
-                role=user_role,
-                locale=user_locale,
-                mood=user_mood,
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }],
+        system=_personalized_system_blocks(
+            obs.assistant_name,
+            role=user_role,
+            locale=user_locale,
+            mood=user_mood,
+        ),
         tools=tools_with_web,
         tool_choice={"type": "any"},
         messages=[{
@@ -1048,10 +1165,11 @@ async def step(
                 plan_block=plan_block,
                 notifications_block=notifications_block,
                 draft_block=draft_block,
+                stuck_notice=stuck_notice,
             ),
         }],
         max_tokens=1024,
-        temperature=0.0,
+        temperature=rescue_temperature,
     )
 
     action = _extract_tool_call(msg)
@@ -1296,6 +1414,7 @@ async def step(
             "cost_paise": cost,
             "pii_hits": len(gate.pii_hits),
             "injection_risk": gate.injection.risk,
+            "stuck_rescue": stuck_notice is not None,
         },
     )
 
@@ -1312,6 +1431,7 @@ async def step(
         web_searches=web_calls,
         role=user_role or "none",
         mood=user_mood or "default",
+        stuck_rescue=stuck_notice is not None,
     )
     return AgentStepResult(
         action=action, model=model, tokens_used=tokens, cost_inr_paise=cost,
