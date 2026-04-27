@@ -112,7 +112,7 @@ _SYSTEM = f"""You are Sahay's Playbook Generator. You read the official user gui
 Hard rules:
 1. Output ONLY valid JSON matching the schema below. No prose, no markdown fences.
 2. Steps are ordered, 1..N. Each step does exactly one thing.
-3. Use accessibility-tree selectors (text, contentDescription, viewId) — never pixel coordinates.
+3. Use accessibility-tree selectors (text, contentDescription, viewId) — never pixel coordinates. For chronically-stale selectors you may also include a structural fallback `sibling_anchor` (see schema) — the runtime tries it AFTER the flat selector keys.
 4. Mark `confirm_required: true` for any action that sends, deletes, transfers, or otherwise has external side effects.
 5. Refuse to produce playbooks for payment, banking, or money-transfer flows. Return {{"error": "payment_blocked"}} instead.
 6. Inputs are the variables the user supplies at runtime (e.g. recipient_name, message_text). List them in `inputs`.
@@ -137,7 +137,13 @@ Schema (PlaybookSpec):
       "description": "human-readable",
       "target_screen": "screen_name",
       "action": "{ACTION_LIST_FOR_PROMPT}",
-      "target_selector": {{"text": "...", "viewId": "...", "contentDescription": "..."}},
+      "target_selector": {{
+        "text": "...", "viewId": "...", "contentDescription": "...",
+        "sibling_anchor": {{
+          "anchor": {{"text": "Type a message"}},
+          "direction": "next_clickable"
+        }}
+      }},
       "params": {{"text": "{{{{input_name}}}}"}},
       "confirm_required": false,
       "timeout_ms": 5000,

@@ -164,7 +164,7 @@ Hard rules:
 5. Use the same canonical action vocab as ingestion. No invented action names.
 6. Every step MUST include an `expect` post-condition. Tighten or replace existing expects where they're suspected of false-failing.
 7. Use the failure-class hint to pick the right kind of fix:
-   - `selector_stale`        → propose a more robust selector chain (text + cd + viewId + sibling-anchor)
+   - `selector_stale`        → propose a more robust selector chain (text + cd + viewId, plus an optional `sibling_anchor` structural fallback like {"anchor": {"text": "Type a message"}, "direction": "next_clickable"} when neighbours are stable across app updates)
    - `dialog_appeared`       → insert a dismissal step before the failing one
    - `timing_issue`          → bump timeout_ms / add a wait or screen_changed expect
    - `ime_issue`             → re-focus the field before typing; stricter field_value expect

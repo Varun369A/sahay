@@ -35,9 +35,31 @@ object ScreenTreeReader {
 
     /**
      * Find a node matching any of the supplied selectors.
-     * Strategy is tolerant: exact match first, then case-insensitive substring.
      *
-     * Selector keys: "viewId", "text", "contentDescription", "className".
+     * Try order — every step is a fallback for the previous one. Apps drift
+     * fast (rename buttons, change viewIds on rebuild, ship i18n updates),
+     * so we cascade through every signal we have before giving up:
+     *
+     *   1. viewId        — most stable when it works (the app explicitly
+     *                      named the view) but easily missed across builds
+     *   2. text exact    — what the user reads. Brittle to i18n + a/b tests
+     *   3. contentDescription exact — i18n-resilient when the app sets it
+     *   4. text substring         — handles "Send message" matching "Send"
+     *   5. contentDescription substring
+     *   6. className              — last resort, very loose
+     *   7. sibling_anchor         — "the first clickable node after the
+     *                                node with text='Type a message'".
+     *                              The patch the nightly Opus improver
+     *                              generates for `selector_stale` failures.
+     *
+     * Critical: each step that misses MUST fall through to the next one.
+     * Earlier versions returned null after a missed substring search even
+     * when a later selector key was provided — that masked the whole
+     * cascade and made playbooks fragile in the wild.
+     *
+     * Selector keys recognised:
+     *   "viewId", "text", "contentDescription", "className",
+     *   "sibling_anchor" (parsed as JSON in `findNodeByJson`).
      */
     fun findNode(
         root: AccessibilityNodeInfo?,
@@ -45,30 +67,97 @@ object ScreenTreeReader {
     ): AccessibilityNodeInfo? {
         if (root == null) return null
 
+        // 1. viewId — exact, structured ID match
         selectors["viewId"]?.takeIf { it.isNotBlank() && !it.all { c -> c.isDigit() } }?.let { id ->
             val matches = root.findAccessibilityNodeInfosByViewId(id)
             if (!matches.isNullOrEmpty()) return matches.first()
         }
+
+        // 2. text exact (case-insensitive)
         selectors["text"]?.takeIf { it.isNotBlank() }?.let { txt ->
-            val exact = walkFind(root) { it.text?.toString().equals(txt, ignoreCase = true) }
-            if (exact != null) return exact
-            return walkFind(root) {
-                it.text?.toString()?.contains(txt, ignoreCase = true) == true
-            }
+            walkFind(root) { it.text?.toString().equals(txt, ignoreCase = true) }
+                ?.let { return it }
         }
+
+        // 3. contentDescription exact
         selectors["contentDescription"]?.takeIf { it.isNotBlank() }?.let { cd ->
-            val exact = walkFind(root) {
+            walkFind(root) {
                 it.contentDescription?.toString().equals(cd, ignoreCase = true)
-            }
-            if (exact != null) return exact
-            return walkFind(root) {
+            }?.let { return it }
+        }
+
+        // 4. text substring — covers "Send message" matching the literal "Send"
+        selectors["text"]?.takeIf { it.isNotBlank() }?.let { txt ->
+            walkFind(root) {
+                it.text?.toString()?.contains(txt, ignoreCase = true) == true
+            }?.let { return it }
+        }
+
+        // 5. contentDescription substring
+        selectors["contentDescription"]?.takeIf { it.isNotBlank() }?.let { cd ->
+            walkFind(root) {
                 it.contentDescription?.toString()?.contains(cd, ignoreCase = true) == true
+            }?.let { return it }
+        }
+
+        // 6. className — very loose; only fires when the playbook really
+        // means "any EditText on the screen"
+        selectors["className"]?.takeIf { it.isNotBlank() }?.let { cn ->
+            walkFind(root) { it.className?.toString() == cn }?.let { return it }
+        }
+
+        return null
+    }
+
+    /**
+     * Sibling-anchor fallback. Resolves selectors of the form:
+     *
+     *   {"sibling_anchor": {
+     *     "anchor": {"text": "Type a message"},
+     *     "direction": "next_clickable"     // or "prev_clickable"
+     *   }}
+     *
+     * "Find the anchor (using the same cascade as findNode), then walk
+     * forward in the tree to the next clickable node." This is the
+     * structural fallback the Opus improver generates when a label-based
+     * selector keeps going stale across app updates — the relative
+     * position to a stable label often survives renames.
+     *
+     * Returns null if either the anchor or the target can't be resolved.
+     */
+    fun findBySiblingAnchor(
+        root: AccessibilityNodeInfo?,
+        anchorSelectors: Map<String, String?>,
+        direction: String,
+    ): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val anchor = findNode(root, anchorSelectors) ?: return null
+
+        // Flatten the tree into pre-order traversal so "next" / "prev" have
+        // a stable definition. Filter to clickable nodes only — this method
+        // exists specifically to find a clickable target.
+        val clickables = mutableListOf<AccessibilityNodeInfo>()
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.isClickable) clickables += n
+            for (i in n.childCount - 1 downTo 0) {       // reverse so pop pulls in document order
+                n.getChild(i)?.let(stack::addLast)
             }
         }
-        selectors["className"]?.takeIf { it.isNotBlank() }?.let { cn ->
-            return walkFind(root) { it.className?.toString() == cn }
+        val anchorIdx = clickables.indexOfFirst { it == anchor }
+        return when (direction) {
+            "next_clickable" -> {
+                if (anchorIdx < 0) clickables.firstOrNull()
+                else clickables.getOrNull(anchorIdx + 1)
+            }
+            "prev_clickable" -> {
+                if (anchorIdx < 0) null
+                else clickables.getOrNull(anchorIdx - 1)
+            }
+            else -> null
         }
-        return null
     }
 
     /**
