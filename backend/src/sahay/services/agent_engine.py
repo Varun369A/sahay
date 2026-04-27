@@ -1231,6 +1231,36 @@ async def step(
                 reasoning="stage_reply_missing_fields",
             )
         else:
+            # Tone-critique the draft so it sounds like the user wrote it
+            # to THIS contact. Looks up tone profile from LTM (or a
+            # category default), then runs the Haiku critic. Always
+            # falls back to the original on error — must never block.
+            try:
+                from uuid import UUID as _UUID
+
+                from sahay.services.reply_critic import critique_draft
+                from sahay.services.tone_profiler import tone_for_contact
+                if db is not None:
+                    profile = await tone_for_contact(
+                        db, user_id=_UUID(user_id), contact=contact,
+                    )
+                    critique = await critique_draft(
+                        draft=reply_text,
+                        tone_descriptor=profile.descriptor,
+                        contact=contact,
+                    )
+                    if critique.was_rewritten and critique.text.strip():
+                        log.info(
+                            "reply_critique_rewrite",
+                            contact=contact,
+                            tone_source=profile.source,
+                            reason=critique.reason,
+                            cost_paise=critique.cost_inr_paise,
+                        )
+                        reply_text = critique.text
+            except Exception as e:
+                log.warning("reply_critique_skipped", err=str(e))
+
             try:
                 await memory.set_draft_reply(
                     user_id, obs.conversation_id,
