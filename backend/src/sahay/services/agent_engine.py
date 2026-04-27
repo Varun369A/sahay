@@ -1005,7 +1005,31 @@ async def step(
         )
 
     # ── Store goal on first turn ──
+    # First turn: route the raw STT transcript through the Haiku-powered
+    # goal rewriter to fix typos and normalize contact names against the
+    # user's LTM. Skips internally for already-clean inputs (saves the
+    # ~₹0.03 token cost). Falls back to the raw text on any error so the
+    # agent loop never depends on the rewriter being healthy.
     if obs.step_index == 0:
+        try:
+            from sahay.services.goal_rewriter import rewrite_goal
+            from uuid import UUID as _UUID
+            rewrite = await rewrite_goal(
+                db, user_id=_UUID(user_id), raw_text=obs.goal,
+            )
+            if rewrite.was_changed:
+                log.info(
+                    "goal_rewritten",
+                    original=rewrite.original[:80],
+                    rewritten=rewrite.rewritten[:80],
+                    confidence=round(rewrite.confidence, 2),
+                    cost_paise=rewrite.cost_inr_paise,
+                )
+                # Replace the in-flight goal so downstream firewall, plan,
+                # and memory all see the cleaned version.
+                obs.goal = rewrite.rewritten
+        except Exception as e:
+            log.warning("goal_rewrite_skipped", err=str(e))
         await memory.set_goal(user_id, obs.conversation_id, obs.goal)
 
     # ── Firewall: scrub outbound + check inbound for injection ──
