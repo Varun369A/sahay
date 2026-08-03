@@ -115,8 +115,11 @@ def require_tier(*allowed: str):
 
 
 def client_ip(request: Request) -> str | None:
-    """Resolve client IP, preferring the proxy chain."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    """Resolve client IP from the real connection, ignoring X-Forwarded-For.
+
+    X-Forwarded-For is user-controlled and must not be trusted for
+    rate-limit keying unless the app sits behind a known trusted proxy
+    that overwrites the header. Using the raw transport address prevents
+    header-forging to bypass per-IP rate limits.
+    """
     return request.client.host if request.client else None
